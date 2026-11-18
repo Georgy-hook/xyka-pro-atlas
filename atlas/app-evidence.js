@@ -7,7 +7,6 @@
 
   const UNPAGED_LIMIT = 32;
   const PAGE_SIZE = 16;
-  const INLINE_IDS = 6;
   const UNKNOWN = 'Не указано';
   const COMPARISON_NOTE = 'Разборка HookahCat служит для сравнения, но не доказывает устройство ревизии A4.3.';
   const mentionsHookahCat = value => /(?:^|[^a-z0-9])hookah[\s._-]*cat(?:$|[^a-z0-9])/i.test(value);
@@ -73,9 +72,9 @@
     return fragment;
   }
 
-  function citation(source, url) {
+  function citation(url) {
     const line = el('p', 'ev-citation');
-    line.append(el('span', 'ev-label', 'Источник'), ' ', sourceLink(url, text(source)));
+    line.append(el('span', 'ev-label', 'Источник'), ' ', sourceLink(url));
     return line;
   }
 
@@ -172,33 +171,6 @@
     return box;
   }
 
-  function partReferences(ids, ctx) {
-    if (ids.length <= INLINE_IDS) {
-      const run = el('div', 'ev-references');
-      run.append(el('span', 'ev-label', 'Детали на модели'));
-      for (const id of ids) run.append(partID(id, ctx));
-      return run;
-    }
-    // A single observation can reference an entire assembly. Do not create
-    // hidden buttons for it while the reader is typing in the outer register.
-    const details = el('details', 'ev-disclosure');
-    const label = 'Детали на модели';
-    details.append(el('summary', 'ev-summary', `${label}: ${ids.length}`));
-    details.addEventListener('toggle', () => {
-      if (!details.open || details.childElementCount > 1) return;
-      details.append(register({
-        key: 'parts', label, items: ids,
-        searchText: id => [id, ctx.parts.get(id)?.label].join(' '),
-        row(id) {
-          const item = el('li', 'ev-reference');
-          item.append(partID(id, ctx), ' ', text(ctx.parts.get(id)?.label));
-          return item;
-        }
-      }));
-    });
-    return details;
-  }
-
   function record(kind, i, status, ...nodes) {
     const item = el('li', 'ev-record');
     item.dataset.evRow = kind;
@@ -231,24 +203,18 @@
     return [o?.title, o?.status, o?.text, o?.source, o?.url, ...array(o?.parts)].join(' ');
   }
 
-  function observationRow(o, i, ctx) {
+  function passportSource(o, i) {
     const title = text(o?.title) || 'Без названия';
     const status = text(o?.status);
-    if (!ctx) {
-      return record('observation', i, status, sourceLink(o?.url, title),
-        el('p', 'ev-citation', `Источник: ${text(o?.source) || UNKNOWN}`));
-    }
-    const nodes = [el('h4', 'ev-title', title), el('p', 'ev-text', text(o?.text) || UNKNOWN), citation(o?.source, o?.url)];
-    const ids = array(o?.parts);
-    if (ids.length) nodes.push(partReferences(ids, ctx));
-    return record('observation', i, status, ...nodes);
+    return record('observation', i, status, sourceLink(o?.url, title),
+      el('p', 'ev-citation', `Источник: ${text(o?.source) || UNKNOWN}`));
   }
 
   function dimensionRow(d, i) {
     const comparison = el('dl', 'ev-comparison');
     comparison.append(field('cad', 'CAD', text(d?.cad)), field('reference', 'Ориентир', text(d?.reference)));
     const nodes = [el('h4', 'ev-title', text(d?.name) || 'Без названия'), comparison];
-    if (text(d?.url)) nodes.push(citation('', d.url));
+    if (text(d?.url)) nodes.push(citation(d.url));
     return record('dimension', i, text(d?.status), ...nodes);
   }
 
@@ -272,44 +238,28 @@
     return block;
   }
 
-  function renderResearch(photoRoot, specificationRoot, { notes, data, onPart } = {}) {
+  function renderSpecs(root, { notes, data, onPart } = {}) {
     const ctx = { parts: new Map(), onPart };
     for (const part of array(data?.parts)) {
       if (text(part?.id)) ctx.parts.set(part.id, part);
     }
-    if (photoRoot) {
-      const photo = sheet('research', 'Фотоисследование',
-        `Фото подтверждает только видимые признаки. ${COMPARISON_NOTE} EST — оценка, не физический обмер.`);
-      photo.append(section('Наблюдения', {
-        key: 'observations', items: array(notes?.observations), empty: 'Наблюдений нет.',
-        searchText: observationText,
-        row: (o, i) => observationRow(o, i, ctx)
-      }), section('Источники', {
-        key: 'sources', items: array(notes?.sources), empty: 'Источники не указаны.',
-        searchText: s => [s?.title, s?.url].join(' '),
-        row: (s, i) => record('source', i, null, el('p', 'ev-title', text(s?.title) || 'Без названия'), sourceLink(s?.url))
-      }));
-      photoRoot.replaceChildren(photo);
-    }
-    if (specificationRoot) {
-      const spec = sheet('specification', 'Размеры и материалы',
-        `CAD описывает модель, а не физический обмер. EST — оценка; запись о материале не подтверждает состав детали. ${COMPARISON_NOTE}`);
-      const materials = notes?.materials ?? {};
-      spec.append(section('Размеры', {
-        key: 'dimensions', items: array(notes?.dimensions), empty: 'Размеры не указаны.',
-        searchText: d => [d?.name, d?.cad, d?.reference, d?.status, d?.url].join(' '),
-        row: dimensionRow
-      }), section('Материалы', {
-        key: 'materials', items: Object.keys(materials), empty: 'Материалы не указаны.',
-        searchText: id => [id, ctx.parts.get(id)?.label, ctx.parts.get(id)?.sub, materials[id]].join(' '),
-        row(id, i) {
-          const title = el('p', 'ev-material-title');
-          title.append(partID(id, ctx), ' ', text(ctx.parts.get(id)?.label));
-          return record('material', i, null, title, el('p', 'ev-text', text(materials[id]) || UNKNOWN));
-        }
-      }));
-      specificationRoot.replaceChildren(spec);
-    }
+    const spec = sheet('specification', 'Размеры и материалы',
+      'CAD описывает модель, а не физический обмер. EST — оценка; запись о материале не подтверждает состав детали.');
+    const materials = notes?.materials ?? {};
+    spec.append(section('Размеры', {
+      key: 'dimensions', items: array(notes?.dimensions), empty: 'Размеры не указаны.',
+      searchText: d => [d?.name, d?.cad, d?.reference, d?.status, d?.url].join(' '),
+      row: dimensionRow
+    }), section('Материалы', {
+      key: 'materials', items: Object.keys(materials), empty: 'Материалы не указаны.',
+      searchText: id => [id, ctx.parts.get(id)?.label, ctx.parts.get(id)?.sub, materials[id]].join(' '),
+      row(id, i) {
+        const title = el('p', 'ev-material-title');
+        title.append(partID(id, ctx), ' ', text(ctx.parts.get(id)?.label));
+        return record('material', i, null, title, el('p', 'ev-text', text(materials[id]) || UNKNOWN));
+      }
+    }));
+    root.replaceChildren(spec);
   }
 
   function bounds(box) {
@@ -361,11 +311,11 @@
       field('observations', 'Связанные наблюдения', register({
         key: 'related', label: 'Связанные наблюдения', items: related, empty: 'Связанных наблюдений нет.',
         searchText: i => observationText(observations[i]),
-        row: i => observationRow(observations[i], i)
+        row: i => passportSource(observations[i], i)
       }))
     );
     root.replaceChildren(passport);
   }
 
-  window.AtlasEvidence = { renderResearch, renderPassport };
+  window.AtlasEvidence = { renderSpecs, renderPassport };
 })();

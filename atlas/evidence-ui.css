@@ -113,8 +113,7 @@
   list-style: none;
 }
 
-.ev-record,
-.ev-reference {
+.ev-record {
   margin: 0;
   border-top: 1px solid var(--line, #c0c0b6);
   padding-block: .95rem;
@@ -153,8 +152,7 @@
 
 .ev-link,
 .ev-part,
-.ev-page,
-.ev-summary {
+.ev-page {
   color: var(--accent, #913c20);
   text-decoration: underline;
   text-underline-offset: .18em;
@@ -189,33 +187,12 @@
   font-size: .9rem;
 }
 
-.ev-references,
 .ev-pager,
 .ev-tools {
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
   gap: .3rem 1rem;
-}
-
-.ev-references,
-.ev-disclosure {
-  margin-block-start: .15rem;
-}
-
-.ev-summary {
-  width: fit-content;
-  font-size: .9rem;
-}
-
-.ev-disclosure > .ev-register {
-  margin-block-start: .5rem;
-  border-inline-start: 1px solid var(--line, #c0c0b6);
-  padding-inline-start: .8rem;
-}
-
-.ev-reference {
-  padding-block: .25rem;
 }
 
 .ev-comparison {

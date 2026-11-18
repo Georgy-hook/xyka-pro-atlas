@@ -20,6 +20,51 @@ const verify = (name, condition) => {
   report.scenarios.push(name);
 };
 
+const sheets = [
+  {id: 'assembly', name: '01 Сборка'},
+  {id: 'specs', name: '02 Размеры и материалы'},
+];
+
+async function checkSheets(page, active) {
+  const nav = page.getByRole('tablist', {name: 'Листы атласа', exact: true});
+  const tabs = nav.getByRole('tab');
+  assert.equal(await tabs.count(), sheets.length, 'Exactly two top-level tabs in the accessible UI');
+  assert.deepEqual(await nav.locator('button').allTextContents(), sheets.map(s => s.name));
+  assert.deepEqual(await page.locator('#sheets > [role="tabpanel"]').evaluateAll(nodes => nodes.map(n => n.id)),
+    sheets.map(s => s.id), 'No extra mounted (even hidden) top-level panels');
+  const retired = [
+    '#research', '#research-body', '#tab-research', '[data-page="research"]', '[data-ev-sheet="research"]',
+    '[aria-controls~="research"]', '[aria-labelledby~="tab-research"]', '[href="#research"]',
+    '[data-ev-list="sources"]', '[data-ev-list="observations"]',
+  ];
+  assert.equal(await page.locator(retired.join(',')).count(), 0, 'Removed sheet and controls must not exist in the DOM');
+  assert.equal(await page.getByText('Фотоисследование', {exact: true}).count(), 0);
+  for (const {id, name} of sheets) {
+    const tab = nav.getByRole('tab', {name, exact: true});
+    const selected = id === active;
+    assert.ok(await tab.isVisible(), `Visible tab: ${name}`);
+    assert.equal(await tab.getAttribute('aria-controls'), id);
+    assert.equal(await tab.getAttribute('aria-selected'), String(selected));
+    assert.equal(await tab.evaluate(el => el.tabIndex), selected ? 0 : -1);
+    assert.equal(await page.getByRole('tabpanel', {name, exact: true}).count(), selected ? 1 : 0);
+    assert.equal(await page.locator(`#${id}`).isVisible(), selected);
+  }
+  assert.equal(await page.evaluate(() => AtlasUI.getState().page), active);
+}
+
+async function openMaterialPassport(page) {
+  await page.locator('#specs [data-ev-row="material"] [data-ev-part="MechHeaterPlate"]').click();
+  await checkSheets(page, 'assembly');
+  assert.equal(await page.locator('#passport:not([hidden]) #part-id').textContent(), 'MechHeaterPlate');
+  assert.equal(await page.evaluate(() => AtlasUI.getState().group), 'Heater');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'part-focus');
+  const references = await page.evaluate(() => ATLAS_NOTES.observations
+    .filter(o => o.parts.includes('MechHeaterPlate') && o.url).map(o => o.url));
+  assert.ok(references.length, 'Real part-specific source expected');
+  assert.deepEqual(await page.locator('#passport [data-ev-field="observations"] a')
+    .evaluateAll(links => links.map(link => link.href)), references);
+}
+
 async function run() {
   await fs.mkdir(outputs, {recursive: true});
   const index = path.join(root, 'atlas', 'index.html');
@@ -57,6 +102,7 @@ async function run() {
     };
     await page.goto(pathToFileURL(index).href);
     await page.waitForSelector('html[data-ui-ready="true"][data-viewport-state="ready"]');
+    await checkSheets(page, 'assembly');
     const scene = await page.evaluate(() => ({
       sha: ATLAS_SCENE.sourceSHA256,
       n: ATLAS_SCENE.parts.length,
@@ -112,19 +158,35 @@ async function run() {
       if ((await state()).selected) break;
     }
     verify('physical canvas pick opens a catalogue passport', Boolean((await state()).selected));
-    await page.locator('[data-page="research"]').click();
-    verify('research cites actual external sources without network fetches', await page.locator('#research a[href^="https://"]').count() >= 4);
-    await page.locator('#research [data-ev-part="MechHeaterPlate"]').first().click();
-    verify('evidence opens the linked heater feature', (await state()).selected === 'MechHeaterPlate');
-    await page.locator('[data-page="specs"]').click();
+    const firstTab = page.locator('#tab-assembly');
+    const secondTab = page.locator('#tab-specs');
+    await firstTab.press('ArrowLeft');
+    await checkSheets(page, 'specs');
+    assert.ok(await secondTab.evaluate(el => el === document.activeElement));
+    await secondTab.press('ArrowRight');
+    await checkSheets(page, 'assembly');
+    await firstTab.press('End');
+    await checkSheets(page, 'specs');
+    await secondTab.press('Home');
+    await checkSheets(page, 'assembly');
+    verify('two numbered sheets share a wrapping keyboard tablist with only one tab stop',
+      await firstTab.evaluate(el => el === document.activeElement));
+    await secondTab.click();
     const content = await page.locator('#spec-body').innerText();
-    verify('catalogue widths are distinct from photo-derived dimensions', /75 мм/.test(content) && /70 мм/.test(content));
-    await page.locator('[data-page="assembly"]').click();
+    verify('dimensions distinguish catalogue width and diameter and retain cited sources',
+      /75 мм/.test(content) && /70 мм/.test(content) &&
+      await page.locator('#specs [data-ev-row="dimension"] a[href^="https://"]').count() > 0);
+    await openMaterialPassport(page);
+    report.scenarios.push('material ID returns to the linked CAD passport and its own sources');
     await page.locator('[data-action="reset"]').click();
     await page.locator('[data-group="MainPCB"]').focus();
     await page.keyboard.press('ArrowRight');
     verify('arrow keys move between subsystem tabs', (await state()).group === 'DisplayPCB');
     await page.setViewportSize({width: 390, height: 844});
+    await secondTab.click();
+    await checkSheets(page, 'specs');
+    await firstTab.click();
+    await checkSheets(page, 'assembly');
     const width = await page.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]);
     verify('mobile layout has no document-level horizontal overflow', width[0] <= width[1] + 1);
     await page.locator('[data-action="reset"]').click();
@@ -133,18 +195,35 @@ async function run() {
     await context.close();
     const fallback = await browser.newContext({offline: true});
     await fallback.addInitScript(() => {
+      // Same browser page, two visits: fail WebGL on the first only. No change to the app.
+      if (location.search !== '?no-webgl') return;
       const nativeGet = HTMLCanvasElement.prototype.getContext;
       HTMLCanvasElement.prototype.getContext = function(type, ...args) {
         return type.includes('webgl') ? null : nativeGet.call(this, type, ...args);
       };
     });
     const alt = await fallback.newPage();
-    await alt.goto(pathToFileURL(index).href);
+    alt.on('pageerror', e => errors.push(e.message));
+    alt.on('request', request => { if (/^https?:/i.test(request.url())) external.push(request.url()); });
+    await alt.goto(`${pathToFileURL(index).href}?no-webgl`);
     await alt.waitForSelector('html[data-viewport-state="fallback"]');
+    await checkSheets(alt, 'assembly');
     await alt.locator('[data-group="Harness"]').click();
     verify('explicit WebGL fallback retains all 14 harness entries and a genuine CAD illustration',
       await alt.locator('#part-list [data-part-id]').count() === 14 &&
       await alt.locator('#print-image').evaluate(img => img.complete && img.naturalWidth > 100));
+    await alt.locator('#tab-assembly').press('ArrowRight');
+    await checkSheets(alt, 'specs');
+    await openMaterialPassport(alt);
+    await alt.goto(pathToFileURL(index).href);
+    await alt.waitForSelector('html[data-viewport-state="ready"]');
+    await checkSheets(alt, 'assembly');
+    await alt.locator('#tab-specs').click();
+    await checkSheets(alt, 'specs');
+    await alt.locator('#tab-specs').press('ArrowLeft');
+    await checkSheets(alt, 'assembly');
+    verify('fallback, material-to-passport navigation and reopening with WebGL expose only the two sheets',
+      !errors.length && !external.length);
     await fallback.close();
     await fs.writeFile(path.join(outputs, 'ATLAS_ACCEPTANCE.json'), JSON.stringify(report, null, 2) + '\n');
     console.log(`PASS ${report.scenarios.length} acceptance scenarios, ${scene.n} physical features, ${scene.triangles} triangles. Outputs: ${outputs}`);

@@ -27,7 +27,7 @@
   };
   let returnView = 'iso';
   let passportID = null;
-  let renderedResearch = false;
+  let renderedSpecs = false;
   let registerKey = null;
 
   function buildTab(group) {
@@ -128,7 +128,7 @@
     }
   });
 
-  const evidenceContext = {data, notes, onPart: id => selectPart(id, 'evidence')};
+  const evidenceContext = {data, notes, onPart: id => selectPart(id, 'specs')};
 
   function renderPassport() {
     const part = parts.get(state.selected);
@@ -171,9 +171,9 @@
       if (state.page === 'assembly') revealTab(byId(`node-${group.id}`));
     }
     renderPassport();
-    if (state.page !== 'assembly' && !renderedResearch) {
-      window.AtlasEvidence.renderResearch(byId('research-body'), byId('spec-body'), evidenceContext);
-      renderedResearch = true;
+    if (state.page === 'specs' && !renderedSpecs) {
+      window.AtlasEvidence.renderSpecs(byId('spec-body'), evidenceContext);
+      renderedSpecs = true;
     }
     drawing.render(state, intent);
     const flags = document.documentElement.dataset;
@@ -205,7 +205,7 @@
   function selectPart(id, origin) {
     const part = parts.get(id);
     if (!part) return;
-    const fromSheet = origin === 'evidence';
+    const fromSheet = origin === 'specs';
     if (fromSheet || (state.group !== 'all' && state.group !== part.group)) {
       Object.assign(state, {page: 'assembly', group: part.group, query: '', sub: '', isolated: null, explode: 0, view: 'iso'});
       returnView = 'iso';
