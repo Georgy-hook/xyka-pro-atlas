@@ -950,6 +950,7 @@ async function run() {
     await page.setViewportSize({width: 390, height: 844});
     await turnSheet(page, 'specs');
     await turnSheet(page, 'assembly');
+    if (!baseline) await product.phoneSettings(page);
     const width = await page.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]);
     verify('mobile layout has no document-level horizontal overflow', width[0] <= width[1] + 1);
     await action(page, 'reset').click();

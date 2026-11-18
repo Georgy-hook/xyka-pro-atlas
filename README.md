@@ -12,7 +12,7 @@ Lift out the battery, open the steel pod and follow the copper traces on the mai
 
 ### The assembly
 
-Rotate the complete model, switch between four finishes, or pick a part to open its record.
+Choose a finish and explore the complete assembly. On a phone, drag with one finger to orbit, pinch to zoom, then tap a part to inspect it without leaving the model.
 
 ![The assembled XYKA PRO in the interactive English 3D viewer](docs/screenshots/atlas-model.png)
 

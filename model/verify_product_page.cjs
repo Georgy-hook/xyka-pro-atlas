@@ -54,9 +54,14 @@ async function checkFinish(page, id, expectedLabel) {
   assert.equal(await page.locator('#product-finish-name').innerText(), label);
   assert.equal(await page.locator('#finish-name').textContent(), label);
   for (const [selector, attribute] of [['#product-finishes', 'data-product-finish'], ['#finishes', 'data-finish']]) {
-    // The static fallback deliberately hides the WebGL drawing's controls, never the hero's.
-    if (selector === '#product-finishes' || viewport === 'ready') {
-      assert.equal(await page.locator(selector).getByRole('button', {name: label, exact: true}).count(), 1);
+    const controls = page.locator(selector);
+    if (selector === '#product-finishes' || await controls.isVisible()) {
+      assert.equal(await controls.getByRole('button', {name: label, exact: true}).count(), 1);
+    } else if (viewport === 'ready') {
+      // A phone starts with the field exposed, not the entire instrument panel.
+      assert.ok(await page.locator('#options-toggle').isVisible());
+      assert.equal(await page.locator('#options-toggle').getAttribute('aria-expanded'), 'false');
+      assert.equal(await controls.locator(`[${attribute}="${id}"]`).getAttribute('aria-label'), label);
     }
     assert.equal(await page.locator(`${selector} button[aria-pressed="true"]`).getAttribute(attribute), id,
       `${selector}: one active finish, matching the actual assembly`);
@@ -73,6 +78,27 @@ async function checkFinish(page, id, expectedLabel) {
   assert.equal(await page.locator(`${hero} img[src*="hero-"]:visible`).count(), 1, 'Exactly one studio finish on stage');
 }
 
+async function phoneSettings(page) {
+  const toggle = page.locator('#options-toggle');
+  const picker = page.locator('#inspect-group');
+  assert.ok(await picker.isVisible());
+  assert.equal(await picker.locator('option').count(), 12);
+  await picker.selectOption('Battery');
+  assert.equal(await page.locator('#part-list [data-part-id]').count(), 22);
+  await toggle.click();
+  assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+  await page.locator('#view-options [data-view="front"]').click();
+  await page.locator('#view-options [data-finish="pink"]').click();
+  await checkFinish(page, 'pink');
+  assert.equal(await page.evaluate(() => AtlasUI.getState().view), 'front');
+  await page.keyboard.press('Escape');
+  assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+  assert.ok(await toggle.evaluate(el => document.activeElement === el));
+  await page.locator('[data-action="reset"]').click();
+  assert.equal(await picker.inputValue(), 'all');
+  await checkFinish(page, 'graphite');
+}
+
 async function checkLayout(page) {
   const overview = page.locator(hero);
   const title = overview.getByRole('heading').first();
@@ -80,7 +106,16 @@ async function checkLayout(page) {
   const image = overview.locator('#product-image');
   const {width, height} = page.viewportSize();
   const label = `${width}×${height} product overview`;
-  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${label}: horizontal overflow`);
+  const overflow = await page.evaluate(() => {
+    const width = document.documentElement.scrollWidth;
+    if (width <= innerWidth + 1) return '';
+    const crossing = [...document.querySelectorAll('body *')]
+      .filter(el => el.getBoundingClientRect().right > innerWidth + 1)
+      .slice(0, 10)
+      .map(el => el.id || el.getAttribute('class') || el.tagName);
+    return `document ${width}px: ${crossing.join(', ')}`;
+  });
+  assert.equal(overflow, '', `${label}: horizontal overflow ${overflow}`);
   for (const [name, locator] of [['title', title], ['intro', intro], ['illustration', image], ['finishes', overview.locator('#product-finishes')],
     ['viewer CTA', overview.locator('#explore-model')], ['service CTA', overview.locator('#explore-steps')]]) {
     const box = await locator.boundingBox();
@@ -251,4 +286,4 @@ async function captureEnglish(page, {data, frame, frames, checkWorld, outputs, r
   await photograph('atlas-mobile', 'all', 'hero', 'iso');
 }
 
-module.exports = {finishes, productButton, inFrame, checkOptions, checkFinish, checkLayout, checkNavigation, captureEnglish};
+module.exports = {finishes, productButton, inFrame, checkOptions, checkFinish, checkLayout, checkNavigation, captureEnglish, phoneSettings};
