@@ -12,6 +12,8 @@ import FreeCAD as App
 import Part
 import Sketcher
 
+from mech_heat_face import perforated_face
+
 from mech_shapes import (
     ALLOY, AXIS_Y, BACK_PHOTO, CASE, EST, EXT, HZ, INK, MAN, MOLD, OPEN_PHOTO,
     PACK_PHOTO, PALE, PODS, SEAL, STEEL, V, WO1, WO5, XYKA, Y, Z, at_ratio,
@@ -177,12 +179,7 @@ def heater(c):
                 STEEL, OPEN_PHOTO+'; '+MAN+' k; '+WO5+' Figs.4–8', EXT,
                 'Перфорация видна на продуктовых видах, а не на фотографиях A4.3. Диаметр, рисунок и идентичность ревизии не подтверждены.',
                 ratios=(kd, kd, 1), origin=(0, AXIS_Y, guard_z))
-    plate = feature(c, hot, 'Part::Cylinder', 'HeaterPlate', 'Нагревательная пластина · условный габарит')
-    plate.setExpression('Radius', 'Parameters.HeatFaceD / 2')
-    plate.setExpression('Height', 'Parameters.HeatPlateT')
-    c.at(plate, 0, AXIS_Y, guard_z+' + 1.62 mm')
-    c.register(plate, hot, (0.618, 0.571, 0.491), WO5+' Figs.3–8,12–13; '+WO1+' Figs.13–17', EST,
-               'Только огибающий габарит. Не подразумевает сплошной нагреватель, тип материала, конкретное сопротивление или трассу. Датчик, его конструкция и клеммы UNKNOWN.')
+    perforated_face(c, hot, guard_z)
     holder = turned([(22.60, -.06), (25.90, -.06), (26.3, .64), (26.4, 3.65),
                      (28.55, 4.15), (28.55, 5.4), (25.68, 6.1), (23.9, 13.7),
                      (22.95, 13.7), (22.95, 5.6), (23.02, 4.2), (23.02, 1.35),

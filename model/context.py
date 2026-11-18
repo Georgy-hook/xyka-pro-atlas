@@ -205,5 +205,7 @@ class Context:
                              dimensional_status=obj.DimensionalStatus,
                              editable_parameter=local_aliases, envelope_x_mm=f'{bbox.XLength:.3f}',
                              envelope_y_mm=f'{bbox.YLength:.3f}', envelope_z_mm=f'{bbox.ZLength:.3f}',
-                             measured_yes_no='NO', note=obj.ReconstructionNote))
+                             measured_yes_no='NO', note=obj.ReconstructionNote,
+                             surface_material=getattr(obj, 'SurfaceMaterialNote', ''),
+                             material_source=getattr(obj, 'SurfaceMaterialSource', '')))
         write_table(self.root / 'MODEL_MANIFEST.csv', rows, rows[0].keys())

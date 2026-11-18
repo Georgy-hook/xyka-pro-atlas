@@ -21,10 +21,13 @@ from mech_mounts import board_carrier, closure, external_keys, hinge, rim_hardwa
 from mech_shapes import MAN, OPEN_PHOTO, PACK_PHOTO, PHOTO, PODS, RETAIL, US_FAMILY, WO1, WO5, XYKA
 
 
+SMOKEDEX = 'https://smokedex.info/en/p/H8PEDkC54u6/xkah-pro-hookah-e-hmd'
+
+
 PARAMS = [
-    ('BodyW', 78.0, MAN+' p.04: max width/height ≈134/259. '+RETAIL+' lists 7 cm nominal, not a maximum-width measurement.', 7.0),
+    ('BodyW', 78.0, MAN+' p.04: max width/height ≈134/259. '+SMOKEDEX+' lists WIDTH 75 mm; '+RETAIL+' lists DIAMETER 70 mm. Different datums; neither is a maximum calliper width of A4.3.', 7.0),
     ('BodyD', 98.0, MAN+' p.04: depth/width ≈169/134 across face and rear attachment hinge. '+US_FAMILY, 9.0),
-    ('BodyH', 154.0, MAN+' p.04; '+RETAIL+' lists 16 cm. Scale reconciled with front silhouette, not measured on A4.3.', 9.0),
+    ('BodyH', 154.0, MAN+' p.04; '+RETAIL+' and '+SMOKEDEX+' both list 16 cm rounded, without datums. That falls in the photo estimate; do not rescale the unmeasured PCB seating.', 9.0),
     ('PanelBase', 68.0, PHOTO+'; provisional seated lower edge of main PCB above U-tip, not pose of board pulled forward in photograph.', 6.0),
     ('MainDepth', 8.0, 'IMG_8919 / IMG_AD206911: estimated component-face Y leaving room for board backs and service frame.', 1.65),
     ('UiBase', 77.0, MAN+' p.04 c,d,e; IMG_8917/8918. Estimated keypad registration in exterior front outline.', 5.0),
@@ -34,7 +37,7 @@ PARAMS = [
     ('PodOD', 42.0, PODS+' retailer replacement pod, width 42 mm; not measured on owner unit.', 1.6),
     ('PodH', 23.3, PODS+' replacement pod height 23.3 mm; '+OPEN_PHOTO+'; revision fit unknown.', 1.3),
     ('HeatFaceD', 45.8, OPEN_PHOTO+' plate-to-pod apparent width; '+WO5+' Figs.3–8. Heater and sheet are an estimate.', 4.0),
-    ('HeatPlateT', 1.5, WO5+' Figs.4–8: flat plate envelope only; no measured or verified layer stack.', .8),
+    ('HeatPlateT', 1.5, WO5+' Figs.4–8; open Pro photo https://hookahx.de/wp-content/uploads/xkah-innenaufbau-heizspiralen-platte-v1.jpg shows a perforated disk, not its thickness or layer stack.', .8),
     ('StemMouthD', 21.5, XYKA+' regional FAQ: female lower opening 21.5 mm; compatible family, not a caliper reading of this unit.', 1.0),
     ('StemThroatD', 16.0, XYKA+' regional FAQ: female upper end 16 mm, A4.3 unverified.', 1.0),
     ('StemSocketL', 18.5, MAN+' p.04 j; '+WO1+' Figs.8,9,23: axial socket envelope, no measured engagement length.', 4.0),

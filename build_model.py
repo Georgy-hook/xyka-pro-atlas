@@ -25,6 +25,7 @@ def build(out):
     from context import Context, PACKAGE_REFERENCES, text_property
     from export_step import export_sets
     from native_view import present
+    from atlas_appearance import annotate
 
     doc = App.newDocument('XKAH_PRO_A43_rebuilt')
     doc.Label = 'XKAH PRO  /  A4.3  •  фотореконструкция'
@@ -51,6 +52,7 @@ def build(out):
             print(f'=== Build: {title}', flush=True)
             module.build(c)
             doc.recompute()
+        annotate(doc, evidence)
         print('=== Validate leaf shapes', flush=True)
         for obj in c.physical:
             if obj.Shape.isNull() or not obj.Shape.isValid():

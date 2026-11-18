@@ -8,6 +8,7 @@ The spring pin is shown as a mechanical pin only, never as a net assignment.
 import FreeCAD as App
 import Part
 
+from mech_keyfaces import HINGE_PHOTO, REAR_PHOTO, UNLOCK_PHOTO, cushion, grip_key
 from mech_shapes import (
     ALLOY, BACK_PHOTO, CASE, CY, EST, EXT, INK, MAN, MOLD, OBS, OPEN_PHOTO,
     PHOTO, SEAL, STEEL, V, WO1, WX, DY, HZ, Y, Z, bezier, body_pos, circle,
@@ -27,18 +28,35 @@ def bent_button(width, height, y0, depth, x, y, z, pitch=0):
     return moved(s, x, y, z)
 
 
+def rear_key(c, parent, ident, label, width, height, face_y, depth, y, z, pitch, source, note):
+    # Same bore, back face and seated depth as bent_button. Only the outermost
+    # 0.22 mm rounds into the silver-looking lip seen in XYKA 23/25.jpg.
+    r = min(2.2, width / 3)
+    blank = Part.makeLoft([rounded_rect(width - .32, height - .40, r - .16),
+                           rounded_rect(width, height, r, .22),
+                           rounded_rect(width, height, r, depth)], True, True)
+    tilt = App.Rotation(V(1, 0, 0), pitch)
+    face = V(0, y, z) + tilt.multVec(V(0, face_y, 0))
+    pose = App.Placement(face, tilt.multiply(App.Rotation(Z, 180)))  # local -Y faces aft
+    grip_key(c, parent, ident, label, blank, cushion(.76 * width, .66 * height),
+             source, note, pose=pose)
+
+
 def external_keys(c, upper, lower):
     ring = depth_turn(turned([(5.23, 0), (5.66, 0), (5.90, .36),
                               (5.90, 3.70), (5.23, 3.70)]))
     scaled_part(c, lower, 'FrontUnlockBezel', 'Обод кнопки разблокировки основания',
                 moved(ring, 0, 6.05, 22.2), ALLOY, MAN+' g; '+OPEN_PHOTO, EXT)
     button = depth_turn(turned([(0, 0), (4.47, 0), (5.09, .50), (5.10, 2.72), (0, 2.72)]))
-    scaled_part(c, lower, 'FrontUnlockKey', 'Круглая клавиша разблокировки',
-                moved(button, 0, 5.80, 22.2), STEEL, MAN+' g; '+OPEN_PHOTO, EXT,
-                'Наружный орган; скрытый привод, накатка и пружина не восстановлены.')
-    s = bent_button(7.67, 9.11, -1.62, 2.23, 0, 79.12, 111.0)
-    scaled_part(c, upper, 'PackReleaseKey', 'Задняя кнопка извлечения блока', s, MOLD,
-                MAN+' l; '+WO1+' Figs.8–12', EXT, 'Прорезь реальна по виду сзади. Ход оценочный; не моделирует скрытую защёлку батареи.')
+    disc = Part.Wire([Part.makeCircle(4.02, V(), Y)])
+    grip_key(c, lower, 'FrontUnlockKey', 'Круглая клавиша разблокировки', button, disc,
+             MAN+' g; '+OPEN_PHOTO+'; '+UNLOCK_PHOTO, 'На круглом поле видны грани, не знак. '
+             'Скрытый привод и пружина неизвестны.',
+             pose=App.Placement(V(0, 5.80, 22.2), App.Rotation()))
+    rear_key(c, upper, 'PackReleaseKey', 'Задняя кнопка извлечения блока',
+             7.67, 9.11, .61, 2.23, 79.12, 111.0, 0, MAN+' l; '+REAR_PHOTO,
+             'На виде сзади — светлый обод и мелкая сетка без читаемого знака. '
+             'Ход и скрытая защёлка не восстановлены.')
 
 
 def hinge(c, upper, lower, outer):
@@ -66,9 +84,9 @@ def hinge(c, upper, lower, outer):
     scaled_part(c, lower, 'RearClevis', 'Основание шарнира · проушины и паз кнопки',
                 bracket, CASE, MAN+' m,n; '+BACK_PHOTO+'; '+WO1+' Figs.3–7', EXT,
                 'Наружная скоба подтверждена. Внутренний паз — приближение, не копия запатентованного механизма.')
-    cap = bent_button(7.55, 8.22, -1.60, 2.45, 0, 90.18, 29.05, -30.8)
-    scaled_part(c, lower, 'RearEjectKey', 'Задняя клавиша отделения основания', cap, STEEL,
-                MAN+' m; '+BACK_PHOTO, EXT, 'Видимая кнопка: без воображаемых пружин/защёлок.')
+    rear_key(c, lower, 'RearEjectKey', 'Задняя клавиша отделения основания',
+             7.55, 8.22, .85, 2.45, 90.18, 29.05, -30.8, MAN+' m; '+REAR_PHOTO+'; '+HINGE_PHOTO,
+             'Скошенная тыльная площадка с рядами граней, без обозначения и скрытого привода.')
     x = -12.0
     p = lambda y, z: yz(x, y, z)
     upper_path = [Part.makeLine(p(72, 80.3), p(76.95, 80.3)),

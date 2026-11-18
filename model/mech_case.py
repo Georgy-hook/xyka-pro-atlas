@@ -12,6 +12,7 @@ import math
 import FreeCAD as App
 import Part
 
+from mech_keyfaces import panel_key
 from mech_shapes import (
     ALLOY, BACK_PHOTO, CASE, CY, DY, EST, EXT, HZ, INK, MAN, MOLD, OBS, OPEN_PHOTO,
     PALE, PHOTO, RETAIL, SEAL, STEEL, US_FAMILY, V, WO1, WX, Y, Z, bezier, body_pos,
@@ -192,11 +193,9 @@ def service_panel(c, cover):
                              key_outline(.995, 1.22)], True, True)
         stem = Part.makeBox(1.65, .75, 1.92, V(-.825, 1.20, -.96))
         cap = cap.fuse(stem).removeSplitter()
-        scaled_part(c, cover, 'OuterKey'+ident, 'Наружная клавиша '+ident, cap,
-                    STEEL, MAN+' c,d,e; '+PHOTO, EXT,
-                    'Отдельно от подвижной головки тактовой кнопки 20260305A. Верх незафиксированного хода.',
-                    ratios=(1, '(Parameters.UiDepth - Parameters.UiPlungerTop + 0.45 mm) / 1.95 mm', 1),
-                    origin=(x, -.45, z))
+        panel_key(c, cover, ident, cap,
+                  ratios=(1, '(Parameters.UiDepth - Parameters.UiPlungerTop + 0.45 mm) / 1.95 mm', 1),
+                  origin=(x, -.45, z))
     c.register(support, cover, INK, PHOTO+'; '+MAN+' c,d,e; '+OPEN_PHOTO, OBS,
                'Маска: световой проём на 0.6 мм внутри края стекла по периметру. Видимая область не размер матрицы.')
 

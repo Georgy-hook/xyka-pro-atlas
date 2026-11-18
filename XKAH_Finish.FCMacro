@@ -1,0 +1,41 @@
+"""Switch only documented PRO exterior skins. No file is saved by this macro."""
+
+import json
+
+import FreeCAD as App
+import FreeCADGui as Gui
+from PySide import QtWidgets
+
+
+def switch_finish():
+    doc = App.ActiveDocument
+    record = doc.getObject('Evidence') if doc else None
+    parent = Gui.getMainWindow()
+    if record is None or 'FinishCatalog' not in record.PropertiesList:
+        QtWidgets.QMessageBox.information(parent, 'XKAH PRO', 'Откройте нативную сборку из выпуска «Атлас».')
+        return
+    finishes = json.loads(record.FinishCatalog)
+    labels = [f['label'] for f in finishes]
+    current = next((i for i, f in enumerate(finishes) if f['id'] == record.ActiveFinish), 0)
+    name, ok = QtWidgets.QInputDialog.getItem(parent, 'XKAH PRO · отделка',
+                                              'Покрытие корпуса (визуальная оценка)', labels, current, False)
+    if not ok:
+        return
+    choice = finishes[labels.index(name)]
+    doc.openTransaction('Отделка корпуса: '+name)
+    try:
+        for ident, color in choice['colors'].items():
+            part = doc.getObject(ident)
+            rgb = tuple(int(color[i:i+2], 16)/255.0 for i in (1, 3, 5))
+            part.ColorHex = color
+            part.ViewObject.ShapeColor = rgb
+            part.ViewObject.LineColor = tuple(max(.04, v*.4) for v in rgb)
+        record.ActiveFinish = choice['id']
+        doc.recompute()
+        doc.commitTransaction()
+    except Exception:
+        doc.abortTransaction()
+        raise
+
+
+switch_finish()
