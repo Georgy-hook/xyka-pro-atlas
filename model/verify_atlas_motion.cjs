@@ -72,7 +72,7 @@ function installSampler() {
     const img = q('#product-image');
     const stage = q('.product-visual');
     if (!stage || !img) return;
-    const contour = getComputedStyle(stage, '::after');
+    const contour = q('.product-contour');
     const matrix = new DOMMatrix(getComputedStyle(stage).transform === 'none' ? '' : getComputedStyle(stage).transform);
     const layers = stage.querySelectorAll('.finish-outgoing');
     const title = q('#language-title');
@@ -82,7 +82,7 @@ function installSampler() {
     const active = document.activeElement;
     rows.push({t: performance.now(), input, y: scrollY, reduced: pref.matches,
       material: +getComputedStyle(img).opacity, title: alpha(header), shift: matrix.f,
-      contour: contour.content === 'none' ? 0 : +contour.opacity, count: layers.length,
+      contour: contour ? alpha(contour) : 0, count: layers.length,
       old: layers.length ? +getComputedStyle(layers[0]).opacity : 0,
       open, ink: open ? alpha(title) : 0, choice: open ? alpha(choice) : 0,
       top: open ? title.getBoundingClientRect().top : null,
@@ -187,7 +187,10 @@ function contrast(a) {
 }
 
 async function imageField(page, crop = partField) {
-  const field = await page.locator('#product-image').evaluate((img, crop) => {
+  const field = await page.locator('#product-image').evaluate(async (img, crop) => {
+    // The reduced-motion WebGL scene may be ready before the separately fetched photo.
+    // Decode it for intrinsic dimensions; the filmstrip already contains the actual first paints.
+    await img.decode();
     const r = img.getBoundingClientRect();
     const scale = Math.min(r.width / img.naturalWidth, r.height / img.naturalHeight);
     const w = img.naturalWidth * scale;
@@ -198,7 +201,7 @@ async function imageField(page, crop = partField) {
       crop[2] * w / innerWidth, crop[3] * h / innerHeight];
   }, crop);
   assert.ok(field.every(Number.isFinite) && field[0] >= 0 && field[1] >= 0 &&
-    field[0] + field[2] <= 1.001 && field[1] + field[3] <= 1.001, 'The actual housing sample must be in frame');
+    field[0] + field[2] <= 1.001 && field[1] + field[3] <= 1.001, `The housing sample must be in frame: ${field}`);
   return field;
 }
 
@@ -287,6 +290,18 @@ async function intro(env) {
   await page.goto(url.href, {waitUntil: 'commit'});
   await page.waitForSelector(ready, {timeout: 30000});
   await settled(page, '.product-visual');
+  // No network lookup on the first paint. Keep the embedded paths exactly registered
+  // to the editable standalone vector, including when opening the offline copy.
+  const master = await fs.readFile(path.join(process.argv[2], 'atlas/media/hero-contour.svg'), 'utf8');
+  const registration = await page.evaluate(text => {
+    const reference = new DOMParser().parseFromString(text, 'image/svg+xml').documentElement;
+    const shown = document.querySelector('svg.product-contour');
+    const paths = svg => [...svg.querySelectorAll('path')].map(p => p.getAttribute('d').replace(/\s+/g, ' ').trim());
+    return !!shown && shown.getAttribute('viewBox') === reference.getAttribute('viewBox') &&
+      JSON.stringify(paths(shown)) === JSON.stringify(paths(reference)) && paths(shown).length === 12 &&
+      !performance.getEntriesByType('resource').some(r => new URL(r.name).pathname.endsWith('/media/hero-contour.svg'));
+  }, master);
+  check(registration, 'The HTML carries the twelve source-registered contours without a separate first-paint request');
   const rows = await end(page);
   assert.ok(rows.length, 'No animation frames observed on load');
   const origin = await page.evaluate(() => performance.timeOrigin +
@@ -559,7 +574,9 @@ async function selectEvidence(env) {
   await tap('#node-Battery');
   await tap('#part-list [data-part-id="MechBatteryEnvelope"]');
   const canvas = page.locator('#atlas-canvas');
-  await canvas.scrollIntoViewIfNeeded();
+  // Begin *in* the workspace; merely revealing an edge may leave the hero on screen.
+  await canvas.evaluate(el => el.scrollIntoView({block: 'center', behavior: 'instant'}));
+  await frames(page);
   const box = await canvas.boundingBox();
   const x = box.x + box.width * .43;
   const y = Math.max(90, box.y + box.height * .45);
