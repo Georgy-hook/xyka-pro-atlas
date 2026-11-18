@@ -6,6 +6,10 @@
   const assemblyEye = [0.66, 0.54, 1];
   const groupEye = {
     Housing: assemblyEye,
+    LowerBody: assemblyEye,
+    Fascia: [0.18, 0.10, 1],
+    LightRing: [0.5, 0.65, 1],
+    Pod: [0.52, 0.86, 1],
     MainPCB: [-0.17, 0.11, -1],
     DisplayPCB: [0.18, 0.10, 1],
     Heater: [0.62, 0.95, 1],
@@ -13,7 +17,15 @@
     Harness: [-0.54, 0.26, -1],
     Mounts: [0.72, 0.53, 1],
   };
-  const fixedEye = { front: [0, 0, 1], back: [0, 0, -1], top: [0, 1, 0.00001] };
+  const upright = [0, 1, 0];
+  const fixedViews = {
+    front: { eye: [0, 0, 1], up: upright },
+    back: { eye: [0, 0, -1], up: upright },
+    left: { eye: [-1, 0, 0], up: upright },
+    right: { eye: [1, 0, 0], up: upright },
+    top: { eye: [0, 1, 0], up: [0, 0, -1] },
+    bottom: { eye: [0, -1, 0], up: [0, 0, 1] },
+  };
   const keyProfiles = new Set(['key-field', 'key-mark', 'bright-rim']);
 
   async function parseEmbeddedGLB(T, base64) {
@@ -44,8 +56,8 @@
   // Face the working surface of a physical key, not the generic front of its Housing
   // group. The glTF profile identifies the surface; its actual triangles give the tilt
   // (in particular on the sloping rear eject key). No change to the shape or material.
-  function keyEye(T, part) {
-    const sign = part.rest.min.z + part.rest.max.z < part.group.bounds.min.z + part.group.bounds.max.z ? -1 : 1;
+  function keyEye(T, part, assembly) {
+    const sign = part.rest.min.z + part.rest.max.z < assembly.min.z + assembly.max.z ? -1 : 1;
     const sum = new T.Vector3();
     const a = new T.Vector3();
     const b = new T.Vector3();
@@ -91,12 +103,13 @@
       if (!node || !Array.isArray(explode) || explode.length !== 3 || !explode.every(Number.isFinite)) {
         throw new Error(`Нет узла или вектора разнесения для группы ${id}.`);
       }
-      groups.set(id, { id, node, rest: node.position.clone(), delta: new T.Vector3(...explode), bounds: new T.Box3() });
+      groups.set(id, { id, node, rest: node.position.clone(), delta: new T.Vector3(...explode) });
     }
 
     const parts = new Map();
     const owner = new WeakMap();
-    for (const { id, group } of data.parts) {
+    const assembly = new T.Box3();
+    for (const { id, group, explode } of data.parts) {
       const node = nodes.get(id);
       if (!node || !groups.has(group) || parts.has(id)) throw new Error(`Не сопоставлена деталь ${id}.`);
       const surfaces = [];
@@ -108,33 +121,160 @@
       });
       const rest = new T.Box3().setFromObject(node);
       if (!surfaces.length || rest.isEmpty()) throw new Error(`В узле ${id} нет геометрии.`);
-      groups.get(group).bounds.union(rest);
+      assembly.union(rest);
+      const g = groups.get(group);
+      const delta = Array.isArray(explode) && explode.length === 3 && explode.every(Number.isFinite)
+        ? new T.Vector3(...explode) : g.delta;
       parts.set(id, {
-        id, group: groups.get(group), node, surfaces, rest,
-        box: rest.clone(), variants: new Map(), eye: groupEye[group] || assemblyEye,
+        id, group: g, node, surfaces, rest, delta, relative: delta.clone().sub(g.delta),
+        origin: node.position.clone(), box: rest.clone(), variants: new Map(), eye: groupEye[group] || assemblyEye,
       });
     }
     if (!parts.size) throw new Error('Каталог деталей пуст.');
     for (const part of parts.values()) {
-      if (part.group.id !== 'Housing') continue;
       const isKey = part.surfaces.some(({ original }) =>
         [].concat(original).some(material => keyProfiles.has(material.userData.visualProfile)));
-      if (isKey) part.eye = keyEye(T, part);
+      if (isKey) part.eye = keyEye(T, part, assembly);
     }
     return { groups, parts, owner };
+  }
+
+  // Catalog artwork is an optical state on the *existing* carrier's exterior faces.
+  // Use the registered rest-frame in metres: exploding, staging or isolating the part
+  // then moves the artwork with its vertices. No extra mesh/ID, UV rewrite or fetch.
+  function makeScreen(T, model, lcd) {
+    const carrier = model.parts.get(lcd?.anchor);
+    const art = lcd?.artwork;
+    const finite = (v, n) => Array.isArray(v) && v.length === n && v.every(Number.isFinite);
+    const loop = path => Array.isArray(path) && path.length >= 3 && path.every(p => finite(p, 2));
+    if (!carrier || ![lcd.origin, lcd.u, lcd.v, lcd.normal].every(v => finite(v, 3)) ||
+        art?.kind !== 'presentation' || art.units !== 'mm' || !/^#[\da-f]{6}$/i.test(art.color) ||
+        !art.polygons?.length || !art.polygons.every(p => loop(p.points) && (p.holes || []).every(loop))) return null;
+
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const polygon of art.polygons) {
+      for (const [x, y] of polygon.points) {
+        minX = Math.min(minX, x);
+        maxX = Math.max(maxX, x);
+        minY = Math.min(minY, y);
+        maxY = Math.max(maxY, y);
+      }
+    }
+    const pad = 0.15;  // transparent margin against texture-edge sampling, millimetres
+    const left = minX - pad;
+    const top = maxY + pad;
+    const width = maxX + pad - left;
+    const height = top - minY + pad;
+    const mask = document.createElement('canvas');
+    mask.width = Math.max(32, Math.round(768 * width / Math.max(width, height)));
+    mask.height = Math.max(32, Math.round(768 * height / Math.max(width, height)));
+    const brush = mask.getContext('2d');
+    brush.fillStyle = 'white';
+    const sx = mask.width / width;
+    const sy = mask.height / height;
+    brush.setTransform(sx, 0, 0, -sy, -left * sx, top * sy);
+    for (const polygon of art.polygons) {
+      brush.beginPath();
+      for (const ring of [polygon.points, ...(polygon.holes || [])]) {
+        brush.moveTo(...ring[0]);
+        for (let i = 1; i < ring.length; i++) brush.lineTo(...ring[i]);
+        brush.closePath();
+      }
+      brush.fill('evenodd');
+    }
+    const texture = new T.CanvasTexture(mask);
+    const origin = new T.Vector3(...lcd.origin);
+    const u = new T.Vector3(...lcd.u).normalize();
+    const v = new T.Vector3(...lcd.v).normalize();
+    const normal = new T.Vector3(...lcd.normal).normalize();
+    const ink = new T.Color(art.color);
+    const materials = [];
+    const restFrames = new WeakMap();
+    for (const surface of carrier.surfaces) {
+      const rest = surface.mesh.matrixWorld.clone();
+      restFrames.set(surface.mesh, rest);
+      function decorate(original) {
+        const material = original.clone();
+        material.onBeforeCompile = shader => {
+          Object.assign(shader.uniforms, {
+            atlasRest: { value: rest }, atlasOrigin: { value: origin }, atlasU: { value: u },
+            atlasV: { value: v }, atlasNormal: { value: normal }, atlasInk: { value: ink },
+            atlasMask: { value: texture }, atlasMin: { value: new T.Vector2(left, top - height) },
+            atlasSize: { value: new T.Vector2(width, height) },
+          });
+          shader.vertexShader = shader.vertexShader.replace('#include <common>', `#include <common>
+            uniform mat4 atlasRest;
+            uniform vec3 atlasOrigin, atlasU, atlasV, atlasNormal;
+            uniform vec2 atlasMin, atlasSize;
+            varying vec3 vAtlasGlass;`)
+            .replace('#include <begin_vertex>', `#include <begin_vertex>
+            vec3 restDelta = (atlasRest * vec4(position, 1.0)).xyz - atlasOrigin;
+            vec2 sheetMM = 1000.0 * vec2(dot(restDelta, atlasU), dot(restDelta, atlasV));
+            vAtlasGlass = vec3((sheetMM - atlasMin) / atlasSize,
+              dot(normalize(mat3(atlasRest) * normal), atlasNormal));`);
+          shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>
+            varying vec3 vAtlasGlass;
+            uniform sampler2D atlasMask;
+            uniform vec3 atlasInk;`)
+            .replace('#include <opaque_fragment>', `
+            if (vAtlasGlass.z > 0.96 && gl_FrontFacing) {
+              vec2 uv = vAtlasGlass.xy;
+              vec2 inside = step(vec2(0.0), uv) * step(uv, vec2(1.0));
+              // Never extend a mipmapped edge texel across the surrounding dark glass.
+              float graphic = texture2D(atlasMask, uv).a * inside.x * inside.y;
+              // The catalog shows a powered black field; retain a little real glass
+              // reflection and any selection emissive. With display off this code isn't used.
+              outgoingLight = mix(totalEmissiveRadiance, outgoingLight, 0.14) + graphic * atlasInk;
+            }
+            #include <opaque_fragment>`);
+        };
+        material.customProgramCacheKey = () => 'atlas-lcd-surface-v1';
+        materials.push(material);
+        return material;
+      }
+      surface.lit = Array.isArray(surface.original) ? surface.original.map(decorate) : decorate(surface.original);
+    }
+    return {
+      carrier,
+      windowId: lcd.windowId,
+      isLitHit(hit, ray) {
+        if (!carrier.screenOn || !hit?.face) return false;
+        const rest = restFrames.get(hit.object);
+        if (!rest) return false;
+        const facing = hit.face.normal.clone();
+        if (facing.transformDirection(hit.object.matrixWorld).dot(ray.direction) >= 0) return false;
+        if (facing.copy(hit.face.normal).transformDirection(rest).dot(normal) <= 0.96) return false;
+        // Sample the same drawn mask as the shader, in its original carrier frame.
+        const p = hit.object.worldToLocal(hit.point.clone()).applyMatrix4(rest).sub(origin);
+        const x = Math.floor((1000 * p.dot(u) - left) * sx);
+        const y = Math.floor((top - 1000 * p.dot(v)) * sy);
+        if (x < 0 || y < 0 || x >= mask.width || y >= mask.height) return false;
+        return brush.getImageData(x, y, 1, 1).data[3] >= 128;
+      },
+      dispose() {
+        texture.dispose();
+        for (const material of materials) material.dispose();
+      },
+    };
   }
 
   // Clone only selected/recoloured materials. Adjacent parts often share a glTF material.
   function stylePart(part, finish, selected, ink) {
     const { variants, surfaces } = part;
+    const base = s => part.screenOn && s.lit ? s.lit : s.original;
     if (!finish && !selected) {
-      for (const { mesh, original } of surfaces) mesh.material = original;
+      for (const surface of surfaces) surface.mesh.material = base(surface);
       for (const material of variants.values()) material.dispose();
       variants.clear();
       return;
     }
     function variant(original) {
-      if (!variants.has(original)) variants.set(original, original.clone());
+      if (!variants.has(original)) {
+        const local = original.clone();
+        local.onBeforeCompile = original.onBeforeCompile;
+        local.customProgramCacheKey = original.customProgramCacheKey;
+        variants.set(original, local);
+      }
       const material = variants.get(original);
       if (material.color) {
         material.color.copy(original.color);
@@ -152,8 +292,9 @@
       }
       return material;
     }
-    for (const { mesh, original } of surfaces) {
-      mesh.material = Array.isArray(original) ? original.map(variant) : variant(original);
+    for (const surface of surfaces) {
+      const original = base(surface);
+      surface.mesh.material = Array.isArray(original) ? original.map(variant) : variant(original);
     }
   }
 
@@ -251,6 +392,9 @@
     renderer.shadowMap.autoUpdate = false;
     const keyDirection = new T.Vector3(-0.43, 2.4, 0.54).normalize();
     return {
+      // The pinned bundle already supplies a real OrthographicCamera via DirectionalLight.
+      // This detached camera has independent transforms/frustum; never aim the light itself.
+      orthographic: key.shadow.camera.clone(),
       place(bounds, center, radius, contact) {
         // A grounded assembly/part has a contact shadow, a fully exploded diagram has none.
         floor.visible = contact > 0 && !bounds.isEmpty();
@@ -282,17 +426,18 @@
 
   // Solve the perspective frustum inequalities in the eye's own basis for the corners
   // of each visible mesh-node box, including its explosion offset. No nominal product size.
-  function fitDistance(T, boxes, center, eye, camera) {
+  function fitMeasure(T, boxes, center, eye, camera, aspect) {
     const right = new T.Vector3().crossVectors(camera.up, eye).normalize();
     const up = new T.Vector3().crossVectors(eye, right);
-    const spanY = Math.tan(camera.fov * Math.PI / 360) * 0.84;
-    const spanX = spanY * camera.aspect;
+    const parallel = camera.isOrthographicCamera;
+    const spanY = parallel ? 0.5 * 0.84 : Math.tan(camera.fov * Math.PI / 360) * 0.84;
+    const spanX = spanY * aspect;
     const corner = new T.Vector3();
     let distance = 0.000002;
     for (const { min, max } of boxes) {
       for (let i = 0; i < 8; i++) {
         corner.set(i & 1 ? max.x : min.x, i & 2 ? max.y : min.y, i & 4 ? max.z : min.z).sub(center);
-        const depth = corner.dot(eye);
+        const depth = parallel ? 0 : corner.dot(eye);
         distance = Math.max(
           distance,
           depth + Math.abs(corner.dot(right)) / spanX,
@@ -303,7 +448,7 @@
     return distance;
   }
 
-  function bindPicking(T, canvas, camera, model, visibleMeshes, onHit) {
+  function bindPicking(T, canvas, activeCamera, model, visibleMeshes, screen, onHit) {
     const ray = new T.Raycaster();
     const cursor = new T.Vector2();
     let press = null;
@@ -328,10 +473,19 @@
       const rect = canvas.getBoundingClientRect();
       if (!rect.width || !rect.height) return;
       cursor.set(2 * (event.clientX - rect.left) / rect.width - 1, 1 - 2 * (event.clientY - rect.top) / rect.height);
+      const camera = activeCamera();
       camera.updateMatrixWorld();
       ray.setFromCamera(cursor, camera);
-      const hit = ray.intersectObjects(visibleMeshes(), false)[0];
-      if (hit) onHit(model.owner.get(hit.object));
+      const hits = ray.intersectObjects(visibleMeshes(), false);
+      if (!hits.length) return;
+      let id = model.owner.get(hits[0].object);
+      // Only a lit stroke seen through the registered cover targets the underlying LCD.
+      // The off state, dark surround and a removed window all pick the nearest part.
+      if (screen && id === screen.windowId) {
+        const behind = hits.find(hit => model.owner.get(hit.object) !== id);
+        if (screen.isLitHit(behind, ray.ray)) id = screen.carrier.id;
+      }
+      onHit(id);
     }
     const events = { pointerdown: down, pointermove: move, pointerup: up, pointercancel: cancel, lostpointercapture: cancel };
     for (const [type, listener] of Object.entries(events)) canvas.addEventListener(type, listener);
@@ -380,6 +534,7 @@
         root.clear();
       });
       const model = indexModel(T, gltf, data);
+      const screen = makeScreen(T, model, data.presentation?.lcd);
       const scene = new T.Scene();
       scene.add(root);
       cleanup.push(() => {
@@ -389,17 +544,12 @@
       });
       const studio = makeStudio(T, renderer, scene);
       cleanup.push(() => studio.dispose());
-      const camera = new T.PerspectiveCamera(31, 1, 0.001, 2);
+      const perspective = new T.PerspectiveCamera(31, 1, 0.001, 2);
+      const orthographic = studio.orthographic;
+      let camera;
+      let controls;
+      let parallelHeight = 0.18;
       const { cursor, touchAction } = canvas.style;
-      const controls = new T.OrbitControls(camera, canvas);
-      cleanup.push(() => {
-        controls.dispose();
-        Object.assign(canvas.style, { cursor, touchAction });
-      });
-      controls.rotateSpeed = 0.78;
-      controls.zoomToCursor = true;
-      controls.enableDamping = false;
-      controls.autoRotate = false;
 
       const bounds = new T.Box3();
       const center = new T.Vector3();
@@ -412,6 +562,7 @@
       let selected = null;
       let explode = 0;
       let finishes = new Map();
+      let offsets = new Map();
       let framing = false;
       let fitScope = 'visible';
       let width = 0;
@@ -434,8 +585,43 @@
         if (!framing) fitScope = null;
         invalidate();
       }
-      controls.addEventListener('change', change);
-      cleanup.push(() => controls.removeEventListener('change', change));
+      function releaseControls() {
+        if (!controls) return;
+        controls.removeEventListener('change', change);
+        controls.dispose();
+      }
+      function updateProjection() {
+        const aspect = width && height ? width / height : 1;
+        perspective.aspect = aspect;
+        perspective.updateProjectionMatrix();
+        orthographic.top = parallelHeight / 2;
+        orthographic.bottom = -orthographic.top;
+        orthographic.right = orthographic.top * aspect;
+        orthographic.left = -orthographic.right;
+        orthographic.updateProjectionMatrix();
+      }
+      function useCamera(next, up = upright) {
+        if (camera === next && camera.up.x === up[0] && camera.up.y === up[1] && camera.up.z === up[2]) return;
+        // OrbitControls caches its camera-up basis at construction. Recreate on basis
+        // change so top/bottom are exactly axial (no epsilon tilt) and orbit still works.
+        releaseControls();
+        camera = next;
+        camera.up.fromArray(up);
+        controls = new T.OrbitControls(camera, canvas);
+        controls.rotateSpeed = 0.78;
+        controls.zoomToCursor = true;
+        controls.enableDamping = false;
+        controls.autoRotate = false;
+        controls.minDistance = Math.max(1e-8, radius * 0.00008);
+        controls.minZoom = 0.01;
+        controls.maxZoom = 8000;
+        controls.addEventListener('change', change);
+      }
+      useCamera(perspective);
+      cleanup.push(() => {
+        releaseControls();
+        Object.assign(canvas.style, { cursor, touchAction });
+      });
 
       function layout() {
         bounds.makeEmpty();
@@ -443,11 +629,18 @@
         pickable = [];
         for (const g of model.groups.values()) g.node.position.copy(g.rest).addScaledVector(g.delta, explode);
         for (const part of model.parts.values()) {
+          // Exported group frames are identity. Offsets are absolute, additive world metres,
+          // independent of visibility; changing view or isolating never moves a physical part.
+          const offset = offsets.get(part.id);
+          // A part override replaces its group's full-explosion vector, not adds to it.
+          part.node.position.copy(part.origin).addScaledVector(part.relative, explode);
+          if (offset) part.node.position.add(offset);
           part.node.visible = isolated ? part.id === isolated : !group || part.group.id === group;
           if (!part.node.visible) continue;
           part.box.copy(part.rest);
-          part.box.min.addScaledVector(part.group.delta, explode);
-          part.box.max.addScaledVector(part.group.delta, explode);
+          part.box.min.addScaledVector(part.delta, explode);
+          part.box.max.addScaledVector(part.delta, explode);
+          if (offset) part.box.translate(offset);
           bounds.union(part.box);
           visible.push(part);
           for (const { mesh } of part.surfaces) pickable.push(mesh);
@@ -456,7 +649,7 @@
         bounds.getCenter(center);
         radius = Math.max(0.000001, bounds.getSize(new T.Vector3()).length() / 2);
         controls.minDistance = Math.max(1e-8, radius * 0.00008);
-        const contact = group || isolated ? 1 : Math.max(0, 1 - 2 * explode);
+        const contact = group || isolated ? 1 : offsets.size ? 0 : Math.max(0, 1 - 2 * explode);
         studio.place(bounds, center, radius, contact);
       }
       function aim(direction, scope = 'visible') {
@@ -467,7 +660,22 @@
         const eye = direction ? new T.Vector3(...direction) : camera.position.clone().sub(controls.target);
         if (!eye.lengthSq()) eye.fromArray(assemblyEye);
         eye.normalize();
-        const distance = fitDistance(T, boxes, pivot, eye, camera);
+        const aspect = width && height ? width / height : 1;
+        const fit = fitMeasure(T, boxes, pivot, eye, camera, aspect);
+        let distance = fit;
+        if (camera === orthographic) {
+          parallelHeight = fit;
+          if (!group && !isolated && boxes.length > 1) {
+            // Common square metric frame across all six assembled projections. On a non-
+            // square canvas add field at the sides, not a different product magnification.
+            const size = bounds.getSize(new T.Vector3());
+            const side = Math.max(size.x, size.y, size.z) / 0.84;
+            parallelHeight = Math.max(fit, side / Math.min(1, aspect));
+          }
+          camera.zoom = 1;
+          distance = radius * 4;
+          updateProjection();
+        }
         controls.maxDistance = Math.max(radius * 32, distance * 10);
         framing = true;
         controls.target.copy(pivot);
@@ -491,8 +699,7 @@
         pixelRatio = dpr;
         if (!width || !height) return;
         renderer.setDrawingBufferSize(width, height, pixelRatio);
-        camera.aspect = width / height;
-        camera.updateProjectionMatrix();
+        updateProjection();
         if (fitScope) aim(null, fitScope);
         invalidate();
       }
@@ -516,13 +723,26 @@
         paint(selected);
         invalidate();
       }
+      function setScreenOn(on) {
+        if (disposed || !screen) return false;
+        screen.carrier.screenOn = Boolean(on);
+        paint(screen.carrier.id);
+        invalidate();
+        return true;
+      }
       cleanup.push(() => {
+        if (screen) {
+          screen.carrier.screenOn = false;
+          stylePart(screen.carrier, null, false, ink);
+          screen.dispose();
+        }
         for (const part of model.parts.values()) if (part.variants.size) stylePart(part, null, false, ink);
         visible = [];
         pickable = [];
         finishes.clear();
+        offsets.clear();
       });
-      cleanup.push(bindPicking(T, canvas, camera, model, () => pickable, id => {
+      cleanup.push(bindPicking(T, canvas, () => camera, model, () => pickable, screen, id => {
         select(id);
         callbacks.onPick?.(id);
       }));
@@ -546,6 +766,7 @@
       layout();
       resize();
       aim(bestEye());
+      if (screen) setScreenOn(true);
       if (renderer.getContext().isContextLost()) throw new Error('Потерян контекст WebGL.');
       cancelAnimationFrame(frame);
       draw();
@@ -557,6 +778,7 @@
           group = next;
           isolated = null;
           layout();
+          useCamera(perspective);
           aim(bestEye());
         },
         setExplode(value) {
@@ -567,21 +789,42 @@
           layout();
           aim(null, fitScope || 'visible');
         },
+        setOffsets(map) {
+          if (disposed) return;
+          const next = new Map();
+          for (const [id, xyz] of map instanceof Map ? map : Object.entries(map || {})) {
+            if (!model.parts.has(id) || !Array.isArray(xyz) || xyz.length !== 3 || !xyz.every(Number.isFinite)) continue;
+            if (xyz.some(value => value !== 0)) next.set(id, new T.Vector3(...xyz));
+          }
+          if (next.size === offsets.size && [...next].every(([id, v]) => offsets.get(id)?.equals(v))) return;
+          offsets = next;
+          layout();
+          aim(null, fitScope || 'visible');
+        },
+        setScreenOn,
         select,
         isolate(id) {
           if (disposed || (id != null && !model.parts.has(id))) return;
           isolated = id ?? null;
           layout();
+          useCamera(perspective);
           aim(bestEye());
         },
         fit() {
           aim(null);
         },
         setView(name) {
+          if (disposed) return;
           const detail = model.parts.get(selected);
-          if (name === 'part') aim(detail?.node.visible ? detail.eye : bestEye(), 'part');
-          else if (name === 'iso') aim(bestEye());
-          else if (Object.hasOwn(fixedEye, name)) aim(fixedEye[name]);
+          if (name === 'iso' || name === 'part') {
+            useCamera(perspective);
+            if (name === 'part') aim(detail?.node.visible ? detail.eye : bestEye(), 'part');
+            else aim(bestEye());
+          } else if (Object.hasOwn(fixedViews, name)) {
+            const view = fixedViews[name];
+            useCamera(orthographic, view.up);
+            aim(view.eye);
+          }
         },
         setFinish(map) {
           if (disposed) return;

@@ -9,10 +9,15 @@
     const nativeRange = byId('explode-native');
     const finishButtons = new Map();
     const finishMaps = new Map();
-    const shellIDs = new Set(data.parts.filter(p => p.group === 'Housing').map(p => p.id));
+    // Painted skins can belong to different functional units. Only IDs named by
+    // the finish catalogue get a coat; electrical assemblies keep their CAD colours.
+    const electrical = new Set(['MainPCB', 'DisplayPCB', 'Harness', 'Battery']);
+    const shellIDs = new Set(data.parts.filter(p => !electrical.has(p.group)).map(p => p.id));
+    const screenButton = document.querySelector('[data-action="screen"]');
     let viewport = null;
     let previous = null;
     let failed = false;
+    let screenAvailable = false;
     let updatingRange = true;
     let rangeEnabled = null;
 
@@ -94,7 +99,12 @@
         }
         if (!instance) throw new Error('Не создан просмотрщик WebGL.');
         viewport = instance;
-        onViewport('ready');
+        if (data.service?.steps?.length && typeof instance.setOffsets !== 'function') {
+          throw new Error('Модуль 3D не поддерживает положения деталей этого выпуска.');
+        }
+        // Success means the trace AND its physical optical carrier were matched by the renderer.
+        screenAvailable = Boolean(data.presentation?.lcd?.artwork?.polygons?.length && instance.setScreenOn?.(true));
+        onViewport('ready', screenAvailable);
       } catch (error) {
         reportFailure(error.message);
       }
@@ -120,7 +130,17 @@
       updatingRange = false;
     }
 
-    function render(state, intent) {
+    function hasScreen() {
+      return screenAvailable && Boolean(viewport);
+    }
+
+    function setScreen(wanted) {
+      if (!hasScreen()) return false;
+      const result = viewport.setScreenOn(wanted);
+      return Boolean(result && wanted);
+    }
+
+    function render(state, intent, pose) {
       const ready = state.viewport === 'ready';
       const fallback = state.viewport === 'fallback';
       canvas.hidden = fallback;
@@ -128,6 +148,11 @@
       byId('loading-note').hidden = state.viewport !== 'loading';
       byId('print-fallback').hidden = !fallback;
       byId('gesture-hint').hidden = !ready;
+      screenButton.hidden = !hasScreen() || !ready;
+      screenButton.disabled = screenButton.hidden;
+      screenButton.setAttribute('aria-pressed', String(state.screenOn));
+      screenButton.textContent = state.screenOn ? 'Экран: вкл.' : 'Экран: выкл.';
+      screenButton.title = 'Показать или скрыть заставку по каталогу XYKA. Это иллюстрация, не работа электроники.';
       document.querySelector('[data-action="fit"]').disabled = !ready;
       document.querySelector('[data-action="leave-isolation"]').hidden = !state.isolated;
       const isolate = document.querySelector('[data-action="isolate"]');
@@ -138,7 +163,8 @@
       document.querySelector('[data-action="leave-isolation"]').lastChild.textContent = state.group === 'all' ? 'К сборке' : 'К узлу';
       isolate.title = ready ? '' : 'Осмотр отдельно доступен в 3D';
       for (const button of document.querySelectorAll('[data-view]')) {
-        button.disabled = !ready;
+        const extended = ['left', 'right', 'bottom'].includes(button.dataset.view);
+        button.disabled = !ready || (extended && typeof viewport?.setOffsets !== 'function');
         button.setAttribute('aria-pressed', String(button.dataset.view === state.view));
       }
       byId('picked-caption').hidden = !state.selected || !ready;
@@ -148,9 +174,8 @@
         button.setAttribute('aria-pressed', String(id === state.finish));
       }
       byId('finish-name').textContent = finishButtons.get(state.finish)?.getAttribute('aria-label') || '—';
-      // Exported explosion vectors are per assembly node. Reframing one
-      // rigid node after translating it would produce a misleading no-op.
-      const rangeContext = state.isolated || state.group !== 'all' ? 'Только в сборе' : '';
+      // Manual explosion and the absolute service pose are mutually exclusive.
+      const rangeContext = pose ? 'По этапам' : state.isolated || state.group !== 'all' ? 'Только в сборе' : '';
       updateRange(state.explode, ready && !rangeContext, rangeContext);
 
       if (!viewport || !ready) return;
@@ -159,19 +184,23 @@
       try {
         const groupChanged = !previous || state.group !== previous.group || intent === 'reset';
         const isolationChanged = groupChanged || state.isolated !== previous.isolated;
+        const stepChanged = !previous || previous.serviceStep !== state.serviceStep;
         if (groupChanged) viewport.setGroup(state.group);
         if (!groupChanged && isolationChanged && previous.isolated) viewport.isolate(null);
         if (!previous || state.finish !== previous.finish || intent === 'reset') {
           viewport.setFinish(finishMaps.get(state.finish) || {});
         }
-        if (isolationChanged || state.explode !== previous.explode) viewport.setExplode(state.explode);
-        if (isolationChanged || state.selected !== previous.selected) viewport.select(state.selected);
+        if (stepChanged || isolationChanged || state.explode !== previous.explode) viewport.setExplode(state.explode);
+        if (stepChanged || intent === 'reset') viewport.setOffsets?.(pose?.offsets || {});
+        if (stepChanged || isolationChanged || state.selected !== previous.selected) {
+          viewport.select(state.selected || pose?.focusIds[0] || null);
+        }
         if (isolationChanged && state.isolated) viewport.isolate(state.isolated);
-        if (isolationChanged || state.view !== previous.view || intent === 'view') viewport.setView(state.view);
-        if (isolationChanged || intent === 'fit') viewport.fit();
+        if (stepChanged || isolationChanged || state.view !== previous.view || intent === 'view') viewport.setView(state.view);
+        if (stepChanged || isolationChanged || intent === 'fit') viewport.fit();
         previous = {
           group: state.group, view: state.view, isolated: state.isolated,
-          selected: state.selected, finish: state.finish, explode: state.explode
+          selected: state.selected, finish: state.finish, explode: state.explode, serviceStep: state.serviceStep
         };
       } catch (error) {
         reportFailure(error.message);
@@ -181,7 +210,7 @@
     window.addEventListener('pagehide', event => {
       if (!event.persisted) viewport?.destroy();
     });
-    return {start, render};
+    return {start, render, setScreen};
   }
 
   window.AtlasDrawing = Object.freeze({create});

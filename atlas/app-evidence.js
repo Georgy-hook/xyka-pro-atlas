@@ -9,6 +9,7 @@
   const PAGE_SIZE = 16;
   const UNKNOWN = 'Не указано';
   const COMPARISON_NOTE = 'Разборка HookahCat служит для сравнения, но не доказывает устройство ревизии A4.3.';
+  const KIT_NOTE = 'Комплектация по указанным источникам; состав зависит от рынка и выпуска. Это содержимое упаковки, не число деталей в установленной модели.';
   const mentionsHookahCat = value => /(?:^|[^a-z0-9])hookah[\s._-]*cat(?:$|[^a-z0-9])/i.test(value);
   const mm = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 3, useGrouping: false });
   const array = value => Array.isArray(value) ? value : [];
@@ -72,9 +73,9 @@
     return fragment;
   }
 
-  function citation(url) {
+  function citation(url, caption) {
     const line = el('p', 'ev-citation');
-    line.append(el('span', 'ev-label', 'Источник'), ' ', sourceLink(url));
+    line.append(el('span', 'ev-label', 'Источник'), ' ', sourceLink(url, caption));
     return line;
   }
 
@@ -218,6 +219,22 @@
     return record('dimension', i, text(d?.status), ...nodes);
   }
 
+  function kitRow(item, i) {
+    const row = el('li', 'ev-kit-row');
+    row.dataset.evRow = 'kit';
+    row.dataset.evIndex = String(i);
+    const line = el('div', 'ev-kit-line');
+    line.append(el('h4', 'ev-title', text(item.label)));
+    const quantity = text(item.quantity);
+    if (quantity) line.append(el('span', 'ev-label', `Количество: ${quantity}`));
+    const source = text(item.source);
+    if (source || text(item.url)) line.append(citation(item.url, source));
+    row.append(line);
+    const note = text(item.note);
+    if (note) row.append(el('p', 'ev-citation', note));
+    return row;
+  }
+
   function sheet(key, title, boundary) {
     const page = el('article', 'ev-sheet');
     page.lang = 'ru';
@@ -230,11 +247,13 @@
     return page;
   }
 
-  function section(label, config) {
+  function section(label, config, note) {
     const block = el('section', 'ev-section');
     const head = el('div', 'ev-section-head');
     head.append(el('h3', 'ev-subheading', label), el('span', 'ev-total', `Записей: ${config.items.length}`));
-    block.append(head, register({ ...config, label }));
+    block.append(head);
+    if (note) block.append(el('p', 'ev-citation ev-section-note', note));
+    block.append(register({ ...config, label }));
     return block;
   }
 
@@ -250,7 +269,16 @@
       key: 'dimensions', items: array(notes?.dimensions), empty: 'Размеры не указаны.',
       searchText: d => [d?.name, d?.cad, d?.reference, d?.status, d?.url].join(' '),
       row: dimensionRow
-    }), section('Материалы', {
+    }));
+    const kit = array(notes?.kit).filter(item => typeof item?.label === 'string' && item.label.trim());
+    if (kit.length) {
+      spec.append(section('В комплекте', {
+        key: 'kit', items: kit,
+        searchText: item => [item.label, item.quantity, item.note, item.source, item.url].join(' '),
+        row: kitRow
+      }, KIT_NOTE));
+    }
+    spec.append(section('Материалы', {
       key: 'materials', items: Object.keys(materials), empty: 'Материалы не указаны.',
       searchText: id => [id, ctx.parts.get(id)?.label, ctx.parts.get(id)?.sub, materials[id]].join(' '),
       row(id, i) {

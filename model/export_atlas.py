@@ -11,6 +11,7 @@ import csv
 import hashlib
 from importlib.util import find_spec
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -27,19 +28,25 @@ FINISH = {  # name: (metallic, roughness)
     'key-field': (0.46, 0.34), 'key-mark': (0.21, 0.42), 'exposed-metal': (0.73, 0.32),
     'solder': (0.57, 0.39), 'gloss-front': (0.0, 0.21), 'window': (0.0, 0.14),
     'pcb-mask': (0.0, 0.40), 'disk-surface': (0.0, 0.55), 'disk-graphic': (0.0, 0.46),
-    'jacket': (0.0, 0.54),
+    'jacket': (0.0, 0.54), 'smoked-window': (0.0, 0.20), 'soft-matte': (0.0, 0.86),
+    'print': (0.0, 0.53),
 }
 
 SHELL = {'MechUpperFairing', 'MechLowerShroud', 'MechBevelGrip', 'MechRearClevis', 'MechRearHingeLeaf'}
 KEYS = {'MechOuterKeyL', 'MechOuterKeyC', 'MechOuterKeyR', 'MechFrontUnlockKey',
         'MechPackReleaseKey', 'MechRearEjectKey'}
-EXPOSED = {'MechHeatGuard', 'MechRemovablePod', 'MechPodLid', 'MechStemFacePlate', 'MechStemSocket',
+EXPOSED = {'MechHeatGuard', 'MechRemovablePod', 'MechPodLid', 'MechPodScreen', 'MechStemFacePlate', 'MechStemSocket',
            'MechClosurePin', 'MechClosurePinGuide', 'MechHingeAxle', 'PcPlatedWalls', 'PcRGBFootprints',
-           'PcRGBTails', 'UiRim', 'UiPerforatedLand', 'UiWitnessEye', 'UiFieldBrightSites'}
+           'PcRGBTails', 'UiRim', 'UiPerforatedLand', 'UiWitnessEye', 'UiFieldBrightSites',
+           'MechPackEndContacts', 'MechPackSeatSockets'}
+PRINT = {'MechBrandMark', 'MechPodWallMark', 'MechPackEndInk', 'MechHeatGuardHotSymbol',
+         'MechHeatGuardCaption', 'MechHeatGuardRimLegend', 'MechHeatGuardFixingMarks', 'MechHeatGuardCenterMark'}
 BY_ID = {**dict.fromkeys(SHELL, 'satin-shell'), **dict.fromkeys(EXPOSED, 'exposed-metal'),
+         **dict.fromkeys(PRINT, 'print'),
          **dict.fromkeys(KEYS, 'bright-rim'), **{k + 'Field': 'key-field' for k in KEYS},
          **{k + 'Mark': 'key-mark' for k in KEYS}, 'MechFrontUnlockBezel': 'bright-rim',
          'MechServiceCover': 'gloss-front', 'UiGlass': 'window',
+         'MechCoverWindow': 'smoked-window', 'UiKeyMembrane': 'soft-matte', 'MechHeatGuardRim': 'bright-rim',
          'PcMaskFace': 'pcb-mask', 'PcMaskRear': 'pcb-mask', 'UiSubstrate': 'pcb-mask',
          'MechHeaterPlate': 'disk-surface', 'MechHeaterFaceBands': 'disk-graphic'}
 
@@ -49,10 +56,13 @@ def finish_for(name, group):
         return BY_ID[name]
     if group == 'Harness':
         return 'jacket'  # even the two clear jackets stay opaque for reliable picking/sorting
+    if group == 'Battery' and name.startswith('MechRetailBattery'):
+        return 'print'  # conformal native ink, not a photograph/texture
     if name.startswith(('PcJoint', 'UiSolderWitness')) or name.endswith('_Solder'):
         return 'solder'
     if (name.endswith(('_Leads', '_Lands')) or (name.startswith('PcSm') and name.endswith('Ends'))
-            or name.startswith(('MechServiceScrew', 'PcSolderLand', 'PcRGBEntry', 'UiFlexFinger',
+            or name.startswith(('MechServiceScrew', 'MechServiceBaseSealScrew', 'MechServiceBaseInnerScrew',
+                                'PcSolderLand', 'PcRGBEntry', 'UiFlexFinger',
                                 'UiFlexPad', 'UiSwitchPads', 'UiSwitchCan', 'UiSwitchClips', 'UiSwitchLeads'))
             or re.fullmatch(r'Ui(Contact(Eye)?|Edge(Pad|Eye))\d+', name)):
         return 'exposed-metal'
@@ -89,18 +99,147 @@ def linear_rgb(color):
     return [v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4 for v in srgb]
 
 
+def _vec3(value, field):
+    if (not isinstance(value, (list, tuple)) or len(value) != 3
+            or any(type(x) not in (int, float) or not math.isfinite(x) for x in value)):
+        raise ValueError(f'{field}: expected a finite numeric XYZ vector')
+    return value
+
+
+def _id_list(value, allowed, field):
+    if not isinstance(value, list) or not value or any(not isinstance(k, str) for k in value):
+        raise ValueError(f'{field}: expected a nonempty array of physical IDs')
+    if len(set(value)) != len(value) or not set(value) <= allowed:
+        raise ValueError(f'{field}: duplicate or nonphysical ID: {sorted(set(value) - allowed)}')
+    return value
+
+
+def validate_service(service, offsets):
+    """Moves are incremental world-glTF metres. Offsets are independently read from each leaf."""
+    if not isinstance(service, dict) or not isinstance(service.get('steps'), list) or not service['steps']:
+        raise ValueError('Evidence.ServicePlanJSON: missing service steps')
+    allowed = set(offsets)
+    totals = {k: [0., 0., 0.] for k in allowed}
+    step_ids = set()
+    for step in service['steps']:
+        if not isinstance(step, dict) or any(not isinstance(step.get(k), str) or not step[k].strip()
+                                            for k in ('id', 'title', 'text', 'source')):
+            raise ValueError('Service step requires id, title, text and source')
+        sid = step['id']
+        if sid in step_ids:
+            raise ValueError(f'Duplicate service step: {sid}')
+        step_ids.add(sid)
+        if 'view' in step and step['view'] not in ('front', 'back', 'left', 'right', 'top', 'bottom', 'iso', 'part'):
+            raise ValueError(f'{sid}: unsupported view {step["view"]!r}')
+        if 'focusIds' in step and step['focusIds'] != []:
+            _id_list(step['focusIds'], allowed, f'{sid}.focusIds')
+        if not isinstance(step.get('moves'), list) or not step['moves']:
+            raise ValueError(f'{sid}: no service moves')
+        moved = set()
+        for move in step['moves']:
+            if not isinstance(move, dict):
+                raise ValueError(f'{sid}: invalid move')
+            ids = _id_list(move.get('ids'), allowed, f'{sid}.moves.ids')
+            if moved.intersection(ids):
+                raise ValueError(f'{sid}: a physical leaf has multiple moves in the same step')
+            moved.update(ids)
+            delta = _vec3(move.get('d'), f'{sid}.moves.d')
+            if not any(delta):
+                raise ValueError(f'{sid}: zero move')
+            for name in ids:
+                totals[name] = [a + b for a, b in zip(totals[name], delta)]
+    for name, target in offsets.items():
+        if not all(math.isclose(x, y, abs_tol=1e-6, rel_tol=0.) for x, y in zip(totals[name], target)):
+            raise ValueError(f'{name}: sum of service moves {totals[name]} != ServiceExplodeMM {target} (glTF m)')
+
+
+def read_layout(scene):
+    """Read the actual Assembly tree and registry. No physical copies from Exploded/POD links."""
+    from assembly_units import LAYOUT, SHORT_LABELS, UNITS
+    from atlas_mesh import gltf_metres
+
+    doc = scene.doc
+    assembly = doc.getObject('Assembly')
+    if assembly is None:
+        raise ValueError('Missing native Assembly')
+    unit_names = tuple(UNITS)
+    is_retail = any(doc.getObject(k) is not None for k in unit_names)
+    evidence = doc.getObject('Evidence')
+    units, groups, offsets, extras = [], [], {}, {}
+    if is_retail:
+        parents = {o.Name: o for o in assembly.Group}
+        if set(parents) != set(unit_names) or any(not o.isDerivedFrom('App::Part') for o in parents.values()):
+            raise ValueError('Native Assembly must contain the two physical units')
+        units = [{'id': k, 'label': parents[k].Label} for k in unit_names]
+        members = {}
+        for name, parent in parents.items():
+            for group in parent.Group:
+                if group.Name in members:
+                    raise ValueError(f'{group.Name}: repeated functional group')
+                if group.Name in scene.parts:
+                    members[group.Name] = name
+        expected = {k: unit for _, k, _, unit, _ in LAYOUT}
+        if members != expected or set(members) != set(scene.parts):
+            raise ValueError('Installed functional groups do not match the assembly unit register')
+    elif evidence is not None and 'ServicePlanJSON' in evidence.PropertiesList:
+        raise ValueError('Service plan without the two native assembly units')
+
+    for key in scene.roots:
+        native = scene.parts[key]
+        group = {'id': key, 'label': native.Label, 'shortLabel': SHORT_LABELS[key]}
+        if is_retail:
+            unit = members[key]
+            group.update(unit=unit, unitLabel=parents[unit].Label)
+            for item in scene.by[key]:
+                obj = item.obj
+                if ('ServiceExplodeMM' not in obj.PropertiesList
+                        or obj.getTypeIdOfProperty('ServiceExplodeMM') != 'App::PropertyVector'):
+                    raise ValueError(f'{item.name}: missing native ServiceExplodeMM vector')
+                delta = gltf_metres(tuple(obj.ServiceExplodeMM)).tolist()
+                offsets[item.name] = _vec3(delta, item.name)
+            # A group can no longer be animated as one rigid body. Only retain
+            # the old coarse vector where all of its children actually share it.
+            distinct = {tuple(offsets[i.name]) for i in scene.by[key]}
+            group['explode'] = list(distinct.pop()) if len(distinct) == 1 else [0., 0., 0.]
+        else:
+            group['explode'] = gltf_metres(scene.offsets[key]).tolist()
+            offsets.update({i.name: group['explode'] for i in scene.by[key]})
+        groups.append(group)
+    if is_retail:
+        from retail_presentation import saved_presentation
+
+        if (evidence is None or 'ServicePlanJSON' not in evidence.PropertiesList
+                or evidence.getTypeIdOfProperty('ServicePlanJSON') != 'App::PropertyString'):
+            raise ValueError('Missing saved Evidence.ServicePlanJSON')
+        service = json.loads(evidence.ServicePlanJSON)
+        validate_service(service, offsets)
+        presentation = saved_presentation(doc, set(offsets))
+        lcd = presentation['lcd']
+        if (scene.named[lcd['anchor']].root != 'DisplayPCB'
+                or 'MechFrontFilm' not in scene.named[lcd['windowId']].chain):
+            raise ValueError('LCD and removable window must belong to their respective physical carriers')
+        extras = {'units': units, 'service': service, 'presentation': presentation}
+    return groups, offsets, extras
+
+
 class BinaryScene:
-    def __init__(self, source_hash, groups):
-        roots = list(range(len(groups)))
-        self.root_ids = {group['id']: i for i, group in enumerate(groups)}
+    def __init__(self, source_hash, groups, extras):
+        units = extras.get('units', [])
+        nodes = [{'name': g['id'], 'extras': g, 'children': []} for g in [*units, *groups]]
+        roots = list(range(len(units) if units else len(groups)))
+        self.root_ids = {g['id']: i + len(units) for i, g in enumerate(groups)}
+        if units:
+            unit_nodes = {unit['id']: nodes[i] for i, unit in enumerate(units)}
+            for group in groups:
+                unit_nodes[group['unit']]['children'].append(self.root_ids[group['id']])
         self.by_finish = {}
         self.blob = bytearray()
         self.triangles = 0
         self.doc = {
             'asset': {'version': '2.0', 'generator': 'FreeCAD / XKAH atlas',
-                      'extras': {'sourceSHA256': source_hash}},
+                      'extras': {'sourceSHA256': source_hash, **extras}},
             'scene': 0, 'scenes': [{'name': 'Assembly', 'nodes': roots}],
-            'nodes': [{'name': g['id'], 'extras': g, 'children': []} for g in groups],
+            'nodes': nodes,
             'meshes': [], 'materials': [], 'accessors': [], 'bufferViews': [],
         }
 
@@ -119,16 +258,19 @@ class BinaryScene:
         accessors.append(result)
         return len(accessors) - 1
 
-    def material(self, color, finish):
-        key = (color, finish)
+    def material(self, color, finish, opacity):
+        key = (color, finish, opacity)
         if key not in self.by_finish:
             metallic, roughness = FINISH[finish]
             self.by_finish[key] = len(self.doc['materials'])
-            self.doc['materials'].append({
+            mat = {
                 'name': f'{finish} {color}', 'extras': {'color': color, 'visualProfile': finish},
-                'pbrMetallicRoughness': {'baseColorFactor': [*linear_rgb(color), 1.0],
+                'pbrMetallicRoughness': {'baseColorFactor': [*linear_rgb(color), opacity],
                                          'metallicFactor': metallic, 'roughnessFactor': roughness},
-            })
+            }
+            if opacity < 1.0:
+                mat['alphaMode'] = 'BLEND'
+            self.doc['materials'].append(mat)
         return self.by_finish[key]
 
     def add_part(self, part, xyz, normals, indices):
@@ -137,8 +279,9 @@ class BinaryScene:
         normal = self.accessor(normals, 34962, 'VEC3', 5126)
         index = self.accessor(indices.ravel(), 34963, 'SCALAR', 5123 if indices.itemsize == 2 else 5125)
         profile = finish_for(part['id'], part['group'])
+        material = self.material(part['color'], profile, part.get('opacity', 1.0))
         primitive = {'mode': 4, 'attributes': {'POSITION': pos, 'NORMAL': normal},
-                     'indices': index, 'material': self.material(part['color'], profile)}
+                     'indices': index, 'material': material}
         meshes = self.doc['meshes']
         nodes = self.doc['nodes']
         name = part['id']
@@ -159,7 +302,7 @@ class BinaryScene:
 
 def export(src, out):
     import numpy as np
-    from plates_scene import ROOTS, Scene
+    from plates_scene import Scene
     from atlas_mesh import gltf_metres, tessellate
 
     src, out = src.resolve(), out.resolve()
@@ -169,12 +312,12 @@ def export(src, out):
     scene = Scene(src)
     try:
         check_manifest(src, set(scene.named))
-        groups = [{'id': root, 'label': scene.parts[root].Label,
-                   'explode': gltf_metres(scene.offsets[root]).tolist()} for root in ROOTS]
-        binary = BinaryScene(source_hash, groups)
+        groups, offsets, extras = read_layout(scene)
+        binary = BinaryScene(source_hash, groups, extras)
         parts = []
         worst_mm = 0.0
-        for root in ROOTS:
+        for grouping in groups:
+            root = grouping['id']
             for item in scene.by[root]:
                 try:
                     p, n, ix = tessellate(item)
@@ -191,9 +334,22 @@ def export(src, out):
                 if not re.fullmatch(r'#[0-9a-f]{6}', color):
                     raise ValueError(f'{item.name}: invalid ColorHex {item.color!r}')
                 part = {'id': item.name, 'label': item.label, 'group': root, 'color': color,
-                        'sub': scene.doc.getObject(item.chain[-1]).Label if len(item.chain) > 1 else '',
+                        'sub': scene.doc.getObject(item.chain[-1]).Label if item.chain[-1] != root else '',
                         'bbox': lo.tolist() + hi.tolist(), 'evidence': item.obj.EvidenceSource,
-                        'confidence': item.obj.Confidence, 'note': item.obj.ReconstructionNote}
+                        'confidence': item.obj.Confidence, 'note': item.obj.ReconstructionNote,
+                        'explode': offsets[item.name]}
+                if 'unit' in grouping:
+                    # Provenance for native markings too. Positions already live in
+                    # world space; never apply ancestors' service moves again.
+                    part.update(unit=grouping['unit'], unitLabel=grouping['unitLabel'],
+                                nativePath=[*item.chain, item.name])
+                if 'OpticalTransparency' in item.obj.PropertiesList:
+                    # Deliberately use the *saved* optical specification, not GUI
+                    # hide/dim state. This is a physical, individually pickable pane.
+                    pct = float(item.obj.OpticalTransparency)
+                    if not 0 <= pct < 100:
+                        raise ValueError(f'{item.name}: invalid OpticalTransparency {pct}%')
+                    part['opacity'] = (100.0 - pct) / 100.0
                 binary.add_part(part, p, n, ix)
                 parts.append(part)
             print(f'{root}: {len(scene.by[root])} meshes', flush=True)
@@ -204,7 +360,7 @@ def export(src, out):
         scene.close()  # deliberately no recompute()/save()
     if hashlib.sha256(src.read_bytes()).hexdigest() != source_hash:
         raise RuntimeError(f'Source changed during export; not publishing: {src}')
-    payload = {'sourceSHA256': source_hash, 'groups': groups, 'parts': parts,
+    payload = {'sourceSHA256': source_hash, **extras, 'groups': groups, 'parts': parts,
                'triangleCount': binary.triangles, 'glbBase64': base64.b64encode(glb).decode('ascii')}
     out.mkdir(parents=True, exist_ok=True)
     # Stage complete files before publishing: a failed export never leaves truncated JS/GLB.

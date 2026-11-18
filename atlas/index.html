@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="vendor/nouislider/nouislider.min.css">
   <link rel="stylesheet" href="atlas.css">
   <link rel="stylesheet" href="workspace.css">
+  <link rel="stylesheet" href="service.css">
   <link rel="stylesheet" href="register.css">
   <link rel="stylesheet" href="evidence-ui.css">
   <script defer src="data/scene.js"></script>
@@ -18,6 +19,7 @@
   <script defer src="vendor/nouislider/nouislider.min.js"></script>
   <script defer src="app-register.js"></script>
   <script defer src="app-drawing.js"></script>
+  <script defer src="app-service.js"></script>
   <script defer src="app-evidence.js"></script>
   <script defer src="app.js"></script>
 </head>
@@ -44,10 +46,12 @@
       <section id="assembly" role="tabpanel" aria-labelledby="tab-assembly">
         <div id="group-tabs" class="group-tabs" role="tablist" aria-label="Узлы модели"></div>
         <div id="node-sheet" role="tabpanel" class="workspace">
-          <figure id="drawing" class="drawing" aria-labelledby="drawing-title">
+          <div class="plate-column">
+          <figure id="drawing" class="drawing" aria-labelledby="drawing-title" tabindex="-1">
             <header class="sheet-heading">
               <div class="sheet-title">
                 <span class="plate-number" id="figure-number">Фиг. 00</span>
+                <a class="plate-number" href="#service-step" id="step-link" title="К выбору этапа" hidden></a>
                 <h2 id="drawing-title">Общий вид</h2>
               </div>
               <button class="text-action reset" type="button" data-action="reset" title="Вся сборка: изометрия, без разноса, исходная отделка и без фильтров">
@@ -78,8 +82,12 @@
                 <button type="button" data-view="iso" aria-pressed="true" title="Изометрия" disabled><img src="icons/cube.svg" alt="" width="16" height="16">Изо</button>
                 <button type="button" data-view="front" aria-pressed="false" disabled>Спереди</button>
                 <button type="button" data-view="back" aria-pressed="false" disabled>Сзади</button>
+                <button type="button" data-view="left" aria-pressed="false" disabled>Слева</button>
+                <button type="button" data-view="right" aria-pressed="false" disabled>Справа</button>
                 <button type="button" data-view="top" aria-pressed="false" disabled>Сверху</button>
+                <button type="button" data-view="bottom" aria-pressed="false" disabled>Снизу</button>
               </div>
+              <button class="screen-switch" type="button" data-action="screen" aria-label="Каталожная заставка экрана" aria-pressed="false" disabled>Экран: выкл.</button>
               <span class="gesture-hint" id="gesture-hint"><span class="mouse-hint">Тянуть — поворот · Колесо — масштаб</span><span class="touch-hint">Один палец — поворот · Щипок — масштаб</span></span>
               <a class="mobile-register-link" href="#register" id="to-register"><span>К ведомости</span><img src="icons/chevron-right.svg" width="13" height="13" alt=""></a>
             </div>
@@ -95,6 +103,31 @@
               </div>
             </figcaption>
           </figure>
+
+          <section id="service-order" aria-labelledby="service-title" class="service-order">
+            <header class="service-heading">
+              <h2 id="service-title">Порядок разборки</h2>
+              <div class="service-folio"><a id="to-service-view" href="#drawing" hidden>К виду модели</a><span id="service-position" class="plate-number"></span></div>
+            </header>
+            <div class="service-controls" id="service-controls" hidden>
+              <label for="service-step" class="sr-only">Этап разборки модели</label>
+              <select id="service-step" aria-controls="service-detail"><option value="">00 · В сборе</option></select>
+              <button type="button" data-action="service-prev" aria-label="Предыдущий этап">Назад</button>
+              <button type="button" data-action="service-next" aria-label="Следующий этап">Далее</button>
+              <button type="button" data-action="service-rest" aria-label="Вернуть все детали в сборку">В сборе</button>
+            </div>
+            <div id="service-detail">
+              <p id="service-text"></p>
+              <p id="service-source" hidden></p>
+              <details id="service-parts" hidden>
+                <summary id="service-summary">Детали этапа</summary>
+                <p class="service-note">Выбор детали возвращает узел в исходное положение и открывает её паспорт.</p>
+                <div id="service-items"></div>
+              </details>
+            </div>
+            <p id="service-boundary" class="service-note" hidden>Положения показаны для изучения CAD. Смещения условны, это не инструкция по обслуживанию прибора.</p>
+          </section>
+          </div>
 
           <aside class="reg-column" id="register" aria-label="Ведомость и паспорт детали">
             <section class="reg-pane" id="register-pane" aria-labelledby="register-title">

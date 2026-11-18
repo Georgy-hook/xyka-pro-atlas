@@ -140,6 +140,7 @@ material('MechOuterKeyL MechOuterKeyC MechOuterKeyR MechFrontUnlockKey MechPackR
          'MechOuterKeyLField MechOuterKeyCField MechOuterKeyRField MechRearEjectKeyField MechPackReleaseKeyField MechFrontUnlockKeyField',
          'Светлая отделка с металлическим блеском. По снимкам не отличить цельный металл от металлизированного пластика.', KEYS)
 material('UiPerforatedLand', 'Светлая металлическая область у толкателя; сплав и функция неизвестны.', 'IMG_8917.jpg / IMG_8918.jpg')
+material('UiKeyMembrane', 'Съёмная силиконовая прокладка на трёх кнопках платы 20260305A: материал подтверждён владельцем. Толщина и изнанка — оценки.', 'Владелец; IMG_8917.jpg (снятая прокладка); '+OPEN)
 material('UiPlungerL UiPlungerC UiPlungerR', 'Кремовая подвижная головка внутри штампованной рамки. Марка материала не установлена.', 'IMG_8917.jpg / IMG_8918.jpg')
 material('MechBatteryEnvelope MechPackCap', 'Чёрная оболочка съёмного блока. Пластик по виду; состав, элементы и внутренние соединения не устанавливались.', XYKA+'akkumulyator-xyka')
 material('UiFlexFoot UiFlexReturn', 'Янтарная гибкая лента с отдельными контактами; материал и пакет плёнок документально не подтверждены.', 'IMG_8917.jpg / IMG_8918.jpg')
@@ -161,7 +162,19 @@ SOURCES = [
 
 
 def web_notes():
-    return dict(finishes=FINISHES, observations=OBSERVATIONS, dimensions=DIMENSIONS,
+    # Published regional kit. This bill of supply is not the installed parts list.
+    url = XYKA+'xyka-graphite'
+    kit = [dict(label=name, quantity=q, note=note, source='XYKA · комплектация Pro', url=url) for name, q, note in (
+        ('Устройство XYKA PRO', 1, 'Верхний корпус с нагревателем и отсоединяемое основание.'),
+        ('Съёмный аккумулятор', 1, 'Показан в верхней части. Зарядный кабель — отдельная принадлежность.'),
+        ('Многоразовая чаша', 2, 'В модели установлена одна: корпус, сетка и крышка. Вторая — запасная.'),
+        ('Уплотнитель для установки на шахту', 2, 'Принадлежность комплекта, не силиконовая прокладка кнопок.'),
+        ('Щипцы для чаши', 1, 'Отдельный инструмент.'), ('Шило-вилка', 1, 'Отдельный инструмент.'),
+        ('Зарядный кабель USB-C', 1, 'Отдельно от съёмного аккумулятора.'),
+        ('Мешок для переноски', 1, 'Принадлежность комплекта.'),
+        ('Руководство по быстрому старту', 1, 'Документация.'), ('Инструкция пользователя', 1, 'Документация.'),
+    )]
+    return dict(finishes=FINISHES, observations=OBSERVATIONS, dimensions=DIMENSIONS, kit=kit,
                 materials=MATERIALS, sources=[dict(title=t, url=u) for t, u in SOURCES])
 
 

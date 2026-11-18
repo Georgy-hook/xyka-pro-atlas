@@ -8,22 +8,18 @@
   const finishes = Array.isArray(notes.finishes) ? notes.finishes : [];
   const defaultFinish = finishes.find(f => f.id === 'graphite')?.id || finishes[0]?.id || null;
   const parts = new Map(data.parts.map(part => [part.id, part]));
-  const groups = [
-    ['all', 'В сборе'],
-    ['Housing', 'Корпус'],
-    ['MainPCB', 'Основная PCB'],
-    ['DisplayPCB', 'Плата экрана'],
-    ['Heater', 'Нагреватель'],
-    ['Battery', 'Батарея'],
-    ['Harness', 'Жгут'],
-    ['Mounts', 'Крепёж']
-  ].map(([id, label], i) => ({id, label, no: String(i).padStart(2, '0')}));
+  const groups = [{id: 'all', label: 'В сборе', no: '00'}, ...data.groups.map((group, i) => ({
+    id: group.id,
+    label: group.shortLabel || (group.label || group.id).replace(/^\d+\s+/, ''),
+    no: String(i + 1).padStart(2, '0')
+  }))];
   const groupIndex = new Map(groups.map(g => [g.id, g]));
   const pageTabs = Array.from(byId('sheets-nav').querySelectorAll('[role="tab"]'));
   const narrow = window.matchMedia('(max-width: 780px)');
   const state = {
     page: 'assembly', group: 'all', selected: null, isolated: null,
-    query: '', sub: '', view: 'iso', explode: 0, finish: defaultFinish, viewport: 'loading'
+    query: '', sub: '', view: 'iso', explode: 0, finish: defaultFinish, viewport: 'loading',
+    serviceStep: null, screenOn: false
   };
   let returnView = 'iso';
   let passportID = null;
@@ -118,14 +114,19 @@
       render();
       announce(`Расцветка корпуса: ${byId('finish-name').textContent}`);
     },
-    onViewport(status) {
+    onViewport(status, catalogScreen = false) {
       state.viewport = status;
+      state.screenOn = catalogScreen;
       if (status === 'fallback' && state.isolated) {
         state.isolated = null;
         state.view = returnView;
       }
       render();
     }
+  });
+
+  const service = window.AtlasService.create({
+    data, parts, groups: groupIndex, onStep: setStep, onPart: id => selectPart(id, 'service')
   });
 
   const evidenceContext = {data, notes, onPart: id => selectPart(id, 'specs')};
@@ -154,6 +155,7 @@
 
   function render(intent) {
     const group = groupIndex.get(state.group);
+    const pose = service.get(state.serviceStep);
     for (const button of pageTabs) {
       const active = button.dataset.page === state.page;
       tabState(button, active);
@@ -161,8 +163,15 @@
     }
     for (const button of groupTabs) tabState(button, button.dataset.group === state.group);
     byId('node-sheet').setAttribute('aria-labelledby', `node-${group.id}`);
-    byId('figure-number').textContent = `Фиг. ${group.no}`;
-    byId('drawing-title').textContent = state.isolated ? 'Осмотр детали' : group.id === 'all' ? 'Общий вид' : group.label;
+    const printOnly = state.viewport === 'fallback';
+    const showPose = pose && !printOnly;
+    byId('figure-number').textContent = `Фиг. ${printOnly ? '00' : group.no}`;
+    byId('figure-number').hidden = Boolean(showPose);
+    byId('step-link').hidden = !showPose;
+    byId('to-service-view').hidden = !showPose;
+    if (showPose) byId('step-link').textContent = `Этап ${String(pose.ordinal).padStart(2, '0')}`;
+    byId('drawing-title').textContent = printOnly ? 'Печатный вид сборки' :
+      pose ? pose.title : state.isolated ? 'Осмотр детали' : group.id === 'all' ? 'Общий вид' : group.label;
 
     const key = JSON.stringify([state.group, state.query, state.sub]);
     if (key !== registerKey) {
@@ -175,18 +184,22 @@
       window.AtlasEvidence.renderSpecs(byId('spec-body'), evidenceContext);
       renderedSpecs = true;
     }
-    drawing.render(state, intent);
+    service.render(state);
+    drawing.render(state, intent, pose);
     const flags = document.documentElement.dataset;
     flags.activePage = state.page;
     flags.activeGroup = state.group;
     flags.selectedId = state.selected || '';
     flags.isolatedId = state.isolated || '';
     flags.viewportState = state.viewport;
+    flags.serviceStep = state.serviceStep || '';
     window.dispatchEvent(new CustomEvent('atlas:change', {detail: snapshot()}));
   }
 
   function snapshot() {
-    return {...state, resultCount: register.count()};
+    const offsets = service.get(state.serviceStep)?.offsets || service.rest;
+    const serviceOffsets = Object.fromEntries(Object.entries(offsets).map(([id, xyz]) => [id, [...xyz]]));
+    return {...state, resultCount: register.count(), serviceOffsets};
   }
 
   function switchPage(page) {
@@ -196,18 +209,32 @@
   }
 
   function switchGroup(id) {
-    if (state.group === id && !state.isolated) return;
-    Object.assign(state, {group: id, query: '', sub: '', selected: null, isolated: null, explode: 0, view: 'iso'});
+    if (state.group === id && !state.isolated && !state.serviceStep) return;
+    Object.assign(state, {group: id, query: '', sub: '', selected: null, isolated: null, serviceStep: null, explode: 0, view: 'iso'});
     returnView = 'iso';
     render();
+  }
+
+  function setStep(id) {
+    const pose = service.get(id);
+    if (id && !pose) return;
+    const focus = document.activeElement;
+    Object.assign(state, {
+      page: 'assembly', group: 'all', selected: null, isolated: null, query: '', sub: '',
+      explode: 0, serviceStep: pose?.id || null, view: pose?.view || 'iso'
+    });
+    returnView = 'iso';
+    render('step');
+    if (focus?.disabled) byId('service-step').focus({preventScroll: true});
+    announce(pose ? `Этап ${pose.ordinal}. ${pose.title}.` : 'Все детали возвращены в сборку.');
   }
 
   function selectPart(id, origin) {
     const part = parts.get(id);
     if (!part) return;
-    const fromSheet = origin === 'specs';
+    const fromSheet = origin === 'specs' || origin === 'service' || !!state.serviceStep;
     if (fromSheet || (state.group !== 'all' && state.group !== part.group)) {
-      Object.assign(state, {page: 'assembly', group: part.group, query: '', sub: '', isolated: null, explode: 0, view: 'iso'});
+      Object.assign(state, {page: 'assembly', group: part.group, query: '', sub: '', isolated: null, serviceStep: null, explode: 0, view: 'iso'});
       returnView = 'iso';
     } else if (state.isolated && state.isolated !== id) {
       state.isolated = null;
@@ -252,7 +279,10 @@
   }
 
   function reset() {
-    Object.assign(state, {group: 'all', selected: null, isolated: null, query: '', sub: '', view: 'iso', explode: 0, finish: defaultFinish});
+    Object.assign(state, {
+      group: 'all', selected: null, isolated: null, query: '', sub: '', view: 'iso', explode: 0,
+      finish: defaultFinish, serviceStep: null, screenOn: drawing.setScreen(true)
+    });
     returnView = 'iso';
     registerKey = null;
     render('reset');
@@ -282,6 +312,10 @@
       render('view');
     }
     switch (button.dataset.action) {
+      case 'screen':
+        state.screenOn = drawing.setScreen(!state.screenOn);
+        render();
+        break;
       case 'fit':
         render('fit');
         break;
@@ -308,6 +342,7 @@
     } else if (event.key === 'Escape' && !typing) {
       if (state.isolated) toggleIsolation();
       else if (state.selected) closePassport(true);
+      else if (state.serviceStep) setStep(null);
     }
   });
 
