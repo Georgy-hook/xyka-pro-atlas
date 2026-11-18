@@ -14,6 +14,7 @@
   }
 
   function create({parts, groups, onSelect, onFilter}) {
+    const {t} = window.AtlasLocale;
     const root = document.getElementById('part-list');
     const search = document.getElementById('part-search');
     const select = document.getElementById('subsection');
@@ -32,8 +33,10 @@
         const item = {
           part,
           group,
+          // Subsection captions change language; option values and restored filters must not.
+          subKey: part.subKey ?? part.sub ?? '',
           number: String(ordered.length + 1).padStart(3, '0'),
-          haystack: normalize([part.id, part.label, part.sub, group.label].join(' '))
+          haystack: normalize([part.id, part.label, part.sub, group.id, group.label, part.searchAliases].join(' '))
         };
         ordered.push(item);
         index.set(part.id, item);
@@ -75,11 +78,11 @@
     function updateOptions(scope) {
       const seen = new Set();
       const options = document.createDocumentFragment();
-      options.append(new Option('Все подразделы', ''));
-      for (const {part} of scope) {
-        if (part.sub && !seen.has(part.sub)) {
-          options.append(new Option(part.sub, part.sub));
-          seen.add(part.sub);
+      options.append(new Option(t('Все подразделы', 'All sections', '全部分类'), ''));
+      for (const {part, subKey} of scope) {
+        if (subKey && !seen.has(subKey)) {
+          options.append(new Option(part.sub, subKey));
+          seen.add(subKey);
         }
       }
       select.replaceChildren(options);
@@ -94,8 +97,11 @@
       if (search.value !== query) search.value = query;
       select.value = sub;
       const tokens = normalize(query).trim().split(/\s+/).filter(Boolean);
-      matches = scope.filter(({part, haystack}) => (!sub || part.sub === sub) && tokens.every(token => haystack.includes(token)));
-      summary.textContent = tokens.length || sub ? `Найдено: ${matches.length}` : `${matches.length} поз.`;
+      matches = scope.filter(({subKey, haystack}) => (!sub || subKey === sub) && tokens.every(token => haystack.includes(token)));
+      const n = matches.length;
+      summary.textContent = tokens.length || sub
+        ? t(`Найдено: ${n}`, `Matches: ${n}`, `找到 ${n} 项`)
+        : t(`${n} поз.`, n === 1 ? '1 item' : `${n} items`, `共 ${n} 项`);
       root.dataset.resultCount = String(matches.length);
 
       const fragment = document.createDocumentFragment();
@@ -112,9 +118,12 @@
         fragment.append(rows.get(id));
       }
       if (!matches.length) {
-        const empty = element('div', 'no-results', scope.length ? 'Совпадений нет. Попробуйте часть названия или CAD ID.' : 'В этом узле нет данных о деталях.');
+        const empty = element('div', 'no-results', scope.length
+          ? t('Совпадений нет. Попробуйте часть названия или CAD ID.',
+            'No matches. Try part of a name or CAD ID.', '未找到匹配项。请尝试输入名称或 CAD ID 的一部分。')
+          : t('В этом узле нет данных о деталях.', 'There are no part records for this group.', '此组件没有零件记录。'));
         if (query || sub) {
-          const clear = element('button', '', 'Снять фильтры');
+          const clear = element('button', '', t('Снять фильтры', 'Clear filters', '清除筛选'));
           clear.type = 'button';
           clear.dataset.action = 'clear-filters';
           empty.append(clear);

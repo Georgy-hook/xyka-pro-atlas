@@ -1,6 +1,8 @@
 /* Offline acceptance of an issued directory (native verification, manifest, atlas and print image).
  * PLAYWRIGHT_CORE=... CHROME=... node verify_atlas_ui.cjs /absolute/issue /absolute/scratch
  * ATLAS_UI_BASELINE=1 runs only the 16 legacy scenarios and NEVER issues ATLAS_ACCEPTANCE.json.
+ * Release adds real en/ru/zh-CN checks and six English PNGs. The locale checks
+ * are reported separately; the original 24 release scenarios always run in Russian.
  * Each invocation has a fresh output directory; the viewer itself has no test dependencies.
  */
 'use strict';
@@ -11,6 +13,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const {pathToFileURL} = require('node:url');
 const product = require('./verify_product_page.cjs');
+const locales = require('./verify_atlas_locales.cjs');
 
 const baseline = process.env.ATLAS_UI_BASELINE === '1';
 const report = {mode: baseline ? 'baseline' : 'release', releaseAccepted: false, scenarios: [], screenshotSHA256: {}};
@@ -152,6 +155,44 @@ function installFrameObserver() {
     window.__atlasFrame = {
       read: () => current,
       topology: () => topology,
+      // Read the projected extent of real drawn vertices, not the drawing-field DOM box.
+      // For the battery's narrow spec-ink region also measure light lettering on the
+      // dark carrier. Merely making those meshes visible on the hidden side isn't enough.
+      projection(ids, sampleInk = false) {
+        if (!current) throw Error('No observed Atlas render');
+        let left = 1, top = 1, right = -1, bottom = -1;
+        const eyeToClip = camera.projectionMatrix.clone().multiply(camera.matrixWorldInverse);
+        const localToClip = eyeToClip.clone();
+        const point = new T.Vector3();
+        for (const id of ids) {
+          const mesh = models.get(id);
+          if (!mesh || !visible(mesh)) throw Error(`Not in the rendered view: ${id}`);
+          localToClip.multiplyMatrices(eyeToClip, mesh.matrixWorld);
+          const pos = mesh.geometry.attributes.position;
+          for (let i = 0; i < pos.count; ++i) {
+            point.fromBufferAttribute(pos, i).applyMatrix4(localToClip);
+            const x = (point.x + 1) / 2;
+            const y = (1 - point.y) / 2;
+            left = Math.min(left, x);
+            right = Math.max(right, x);
+            top = Math.min(top, y);
+            bottom = Math.max(bottom, y);
+          }
+        }
+        const rect = {left, top, right, bottom};
+        if (sampleInk) {
+          const x = Math.floor(left * copy.width), y = Math.floor(top * copy.height);
+          const w = Math.ceil(right * copy.width) - x, h = Math.ceil(bottom * copy.height) - y;
+          const rgba = ctx.getImageData(x, y, w, h).data;
+          let light = 0, dark = 0;
+          for (let i = 0; i < rgba.length; i += 4) {
+            if (Math.min(rgba[i], rgba[i + 1], rgba[i + 2]) > 175) ++light;
+            if (Math.max(rgba[i], rgba[i + 1], rgba[i + 2]) < 120) ++dark;
+          }
+          rect.inkField = {width: w, height: h, light: light / (w * h), dark: dark / (w * h)};
+        }
+        return rect;
+      },
       async pixels(region) {
         if (!current) throw Error('No observed Atlas render');
         const w = copy.width, h = copy.height;
@@ -808,15 +849,15 @@ async function run() {
   try {
     report.browser = `Chromium ${browser.version()}`;
     const errors = [], external = [];
-    async function openContext() {
-      const context = await browser.newContext({offline: true, serviceWorkers: 'block', reducedMotion: 'reduce',
+    async function openContext(locale = 'ru-RU', observe = true) {
+      const context = await browser.newContext({locale, offline: true, serviceWorkers: 'block', reducedMotion: 'reduce',
         viewport: {width: 1440, height: 960}, deviceScaleFactor: 1});
       context.on('request', r => { if (/^(https?|wss?):/i.test(r.url())) external.push(r.url()); });
       context.on('page', p => {
         p.on('pageerror', e => errors.push(e.message));
         p.on('websocket', ws => external.push(ws.url()));
       });
-      await context.addInitScript(installFrameObserver);
+      if (observe) await context.addInitScript(installFrameObserver);
       return context;
     }
     function clean() {
@@ -849,9 +890,13 @@ async function run() {
           await product.checkLayout(page);
         }
       }
-      await frames(page);
-      const bytes = await page.screenshot({path: path.join(outputs, `${name}.png`), fullPage: false, animations: 'disabled'});
-      report.screenshotSHA256[name] = hash(bytes);
+      // Keep all four original framing checks. Only the explicitly non-release
+      // baseline writes these Russian diagnostic views; release PNGs are English.
+      if (baseline) {
+        await frames(page);
+        const bytes = await page.screenshot({path: path.join(outputs, `${name}.png`), fullPage: false, animations: 'disabled'});
+        report.screenshotSHA256[name] = hash(bytes);
+      }
     };
     await visit(page, index);
     await shot('atlas-assembly'); // Untouched landing state, before any palette or viewer interaction.
@@ -919,8 +964,15 @@ async function run() {
     await fallback.close();
     if (baseline) assert.equal(report.scenarios.length, 16, 'Preserve the sixteen baseline scenarios');
     else assert.equal(report.scenarios.length, 24, 'Preserve all 24 release scenarios');
-    sameIDs(Object.keys(report.screenshotSHA256), ['atlas-assembly', 'atlas-exploded', 'atlas-mainboard', 'atlas-mobile'], 'Published screenshot keys');
-    assert.equal(new Set(Object.values(report.screenshotSHA256)).size, 4, 'Four distinct viewport captures');
+    if (!baseline) {
+      await locales.run({openContext, index, root, data, report, clean, captureEnglish: page =>
+        product.captureEnglish(page, {data, frame, frames, checkWorld, outputs, report})});
+    }
+    const keys = ['atlas-assembly', 'atlas-exploded', 'atlas-mainboard', 'atlas-mobile'];
+    if (!baseline) keys.push('atlas-model', 'atlas-battery');
+    sameIDs(Object.keys(report.screenshotSHA256), keys, 'Published screenshot keys');
+    if (!baseline) sameIDs(Object.keys(report.screenshotMetadata), keys, 'One locale and physical-view witness per PNG');
+    assert.equal(new Set(Object.values(report.screenshotSHA256)).size, keys.length, 'Distinct viewport captures');
     report.releaseAccepted = !baseline;
     const file = baseline ? 'ATLAS_BASELINE.json' : 'ATLAS_ACCEPTANCE.json';
     await fs.writeFile(path.join(outputs, file), JSON.stringify(report, null, 2) + '\n', {flag: 'wx'});
@@ -931,7 +983,13 @@ async function run() {
   }
 }
 
-run().catch(error => {
-  console.error(`FAIL ${report.mode}:`, error);
-  process.exitCode = 1;
-});
+// Reusable read-only observers for running an isolated capture during QA. Only the
+// complete CLI run above can write the acceptance file.
+module.exports = {installFrameObserver, readCatalogue, frame, frames, checkWorld};
+
+if (require.main === module) {
+  run().catch(error => {
+    console.error(`FAIL ${report.mode}:`, error);
+    process.exitCode = 1;
+  });
+}

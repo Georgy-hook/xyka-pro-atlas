@@ -3,9 +3,12 @@
   'use strict';
 
   const rest = Object.freeze({});
+  const {t} = window.AtlasLocale;
   const presets = new Set(['iso', 'front', 'back', 'left', 'right', 'top', 'bottom']);
   const byId = id => document.getElementById(id);
   const number = n => String(n).padStart(2, '0');
+
+  class PlanError extends Error {}
 
   function compile(steps, parts) {
     const poses = [];
@@ -13,20 +16,29 @@
     let prior = rest;
     let view = 'iso';
     for (const item of steps) {
-      if (!item.id || !item.title || index.has(item.id)) throw new Error('Некорректный индекс этапов.');
+      if (!item.id || !item.title || index.has(item.id)) {
+        throw new PlanError(t('Некорректный индекс этапов.', 'The step index is invalid.', '步骤索引无效。'));
+      }
       const offsets = Object.assign(Object.create(null), prior);
       const focusIds = [...new Set(item.focusIds || [])];
       const involved = new Set(focusIds);
       const shifted = new Set();
       for (const id of involved) {
-        if (!parts.has(id)) throw new Error(`В сцене нет ориентира ${id}.`);
+        if (!parts.has(id)) {
+          throw new PlanError(t(`В сцене нет ориентира ${id}.`, `Reference part ${id} is missing from the scene.`,
+            `场景中缺少参考零件 ${id}。`));
+        }
       }
       for (const {ids, d} of item.moves) {
         if (!Array.isArray(d) || d.length !== 3 || !d.every(Number.isFinite)) {
-          throw new Error('Смещение CAD должно содержать три координаты в метрах.');
+          throw new PlanError(t('Смещение CAD должно содержать три координаты в метрах.',
+            'A CAD offset must have three coordinates in metres.', 'CAD 位移必须包含三个以米为单位的坐标分量。'));
         }
         for (const id of new Set(ids)) {
-          if (!parts.has(id)) throw new Error(`В сцене нет детали ${id}.`);
+          if (!parts.has(id)) {
+            throw new PlanError(t(`В сцене нет детали ${id}.`, `Part ${id} is missing from the scene.`,
+              `场景中缺少零件 ${id}。`));
+          }
           const xyz = offsets[id] || [0, 0, 0];
           const v = xyz.map((v0, axis) => v0 + d[axis]);
           if (v.every(n => Math.abs(n) < 1e-12)) delete offsets[id];
@@ -53,7 +65,7 @@
     if (!source) return;
     const label = typeof source === 'string' ? source : source.title || source.label || source.url;
     const url = typeof source === 'object' ? source.url : source;
-    root.append('Основание: ');
+    root.append(t('Основание: ', 'Source: ', '依据：'));
     if (typeof url === 'string' && /^https?:\/\/\S+$/i.test(url)) {
       try {
         const link = document.createElement('a');
@@ -67,7 +79,7 @@
         return;
       } catch { /* A textual citation does not require a working URL. */ }
     }
-    root.append(label || 'Не указано');
+    root.append(label || t('Не указано', 'Not specified', '未注明'));
   }
 
   function create({data, parts, groups, onStep, onPart}) {
@@ -78,7 +90,7 @@
     } catch (e) {
       // A mismatched publication may still be explored through its regular catalogue.
       plan = compile([], parts);
-      error = e.message;
+      error = e instanceof PlanError ? e.message : t('Некорректные данные этапов.', 'Invalid step data.', '步骤数据无效。');
     }
     const {index, poses} = plan;
     const select = byId('service-step');
@@ -118,7 +130,7 @@
         const code = document.createElement('code');
         code.textContent = id;
         const role = document.createElement('small');
-        role.textContent = pose.shifted.has(id) ? 'Смещается' : 'Ориентир';
+        role.textContent = pose.shifted.has(id) ? t('Смещается', 'Moves', '移动') : t('Ориентир', 'Reference', '参考零件');
         button.append(code, role);
         fragment.append(button);
       }
@@ -139,9 +151,19 @@
       byId('service-position').textContent = poses.length ? `${number(current)} / ${number(poses.length)}` : '—';
       prev.disabled = reset.disabled = !pose;
       next.disabled = current >= poses.length;
-      const mode = state.viewport === 'fallback' ? 'Статичный общий вид; этапы доступны как список.' : 'Выберите этап для разборки модели.';
-      byId('service-text').textContent = pose ? pose.text || pose.title : poses.length ? mode :
-        error ? `Этапы не согласованы с моделью: ${error}` : 'В этом выпуске CAD последовательность не задана.';
+      const description = byId('service-text');
+      if (pose) {
+        description.textContent = pose.text || pose.title;
+      } else if (!poses.length) {
+        description.textContent = error
+          ? t(`Этапы не согласованы с моделью: ${error}`, `The stages do not match the model: ${error}`, `拆解阶段与模型不符：${error}`)
+          : t('В этом выпуске CAD последовательность не задана.', 'This CAD release has no disassembly sequence.', '此版本的 CAD 模型未提供拆解顺序。');
+      } else {
+        description.textContent = state.viewport === 'fallback'
+          ? t('Статичный общий вид; этапы доступны как список.', 'Static assembly view. You can still browse the teardown stages below.',
+            '当前显示静态装配图，仍可按列表浏览各拆解阶段。')
+          : t('Выберите этап для разборки модели.', 'Choose a stage to see how the model comes apart.', '选择一个阶段，查看模型的拆解过程。');
+      }
       citation(byId('service-source'), pose?.source);
       if (changed) {
         details.open = false;
@@ -150,7 +172,10 @@
       details.hidden = !pose?.parts.length;
       if (pose) {
         const names = new Set(pose.parts.map(id => groups.get(parts.get(id).group)?.label || parts.get(id).group));
-        byId('service-summary').textContent = `Детали этапа: ${pose.parts.length} · ${[...names].join(', ')}`;
+        const n = pose.parts.length;
+        const label = [...names].join(t(', ', ', ', '、'));
+        byId('service-summary').textContent = t(`Детали этапа: ${n} · ${label}`, `Parts in this stage: ${n} · ${label}`,
+          `本阶段零件：${n} · ${label}`);
       }
     }
     return {get, render, rest};

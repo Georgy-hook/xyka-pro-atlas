@@ -16,8 +16,24 @@
   <link rel="stylesheet" href="service.css">
   <link rel="stylesheet" href="register.css">
   <link rel="stylesheet" href="evidence-ui.css">
+  <link rel="stylesheet" href="language.css">
+  <script src="locales/language.js"></script>
+  <script defer src="locales/chrome.js"></script>
+  <script defer src="app-language.js"></script>
   <script defer src="data/scene.js"></script>
   <script defer src="evidence.js"></script>
+  <script defer src="locales/names.js"></script>
+  <script defer src="locales/names-mechanical.js"></script>
+  <script defer src="locales/names-mainboard.js"></script>
+  <script defer src="locales/names-display.js"></script>
+  <script defer src="locales/passport.js"></script>
+  <script defer src="locales/passport-sources.js"></script>
+  <script defer src="locales/passport-housing.js"></script>
+  <script defer src="locales/passport-pack.js"></script>
+  <script defer src="locales/passport-boards.js"></script>
+  <script defer src="locales/notes.js"></script>
+  <script defer src="locales/notes-spec.js"></script>
+  <script defer src="locales/notes-research.js"></script>
   <script defer src="vendor/three-atlas.js"></script>
   <script defer src="viewport.js"></script>
   <script defer src="vendor/nouislider/nouislider.min.js"></script>
@@ -44,6 +60,9 @@
           </div>
         </nav>
         <a class="mast-file" href="../XKAH_PRO_A43_drawings.pdf" target="_blank" rel="noopener">Чертежи <span aria-hidden="true">↗</span></a>
+        <button id="language-nav" class="language-trigger" type="button" aria-controls="language-dialog" aria-haspopup="dialog" hidden>
+          <img src="icons/language.svg" alt="" width="19" height="19"><span data-language-code>RU</span>
+        </button>
       </div>
     </header>
 
@@ -53,7 +72,7 @@
           <div class="product-inner">
             <div class="product-copy">
               <p class="product-kicker">Интерактивный атлас <span aria-hidden="true"></span> A4.3</p>
-              <h1 id="product-title">XYKA PRO<span>изнутри.</span></h1>
+              <h1 id="product-title">XYKA PRO <span>изнутри.</span></h1>
               <p class="product-intro">От тонированного стекла до медных дорожек — в одной 3D-модели.</p>
               <div class="product-actions">
                 <a class="product-primary" id="explore-model" href="#explorer"><span id="explore-label">Открыть в 3D</span><span aria-hidden="true">→</span></a>
@@ -196,7 +215,7 @@
         </div>
       </section>
       <section id="specs" role="tabpanel" aria-labelledby="tab-specs" tabindex="0" hidden><div id="spec-body"></div></section>
-      <noscript><p>Для интерактивной разборки откройте этот файл в браузере с JavaScript. Исходный CAD и чертежи доступны по ссылкам ниже.</p></noscript>
+      <noscript><p lang="en">Enable JavaScript to explore in 3D, or download the CAD files below.</p><p lang="ru">Включите JavaScript для просмотра в 3D или скачайте файлы CAD ниже.</p><p lang="zh-CN">启用 JavaScript 即可查看 3D 模型，也可在下方下载 CAD 文件。</p></noscript>
     </main>
 
     <footer class="colophon">
@@ -208,9 +227,25 @@
           <a href="data/atlas.glb" download>Модель <span>GLB</span></a>
           <a href="../XKAH_PRO_A43_drawings.pdf" target="_blank" rel="noopener">Чертежи <span>PDF</span></a>
         </nav>
+        <button type="button" id="language-link" class="language-trigger" aria-controls="language-dialog" aria-haspopup="dialog" hidden>
+          <img src="icons/language.svg" alt="" width="17" height="17"><span data-current-language lang="ru">Русский</span>
+        </button>
       </div>
     </footer>
   </div>
   <div id="announcer" role="status" class="sr-only"></div>
+  <dialog id="language-dialog" aria-labelledby="language-title">
+    <div class="language-sheet">
+      <div class="language-mast"><span>XYKA <b>PRO</b></span><button type="button" id="language-close" aria-label="Закрыть выбор языка">×</button></div>
+      <p class="chapter-label">Интерактивный атлас</p>
+      <h2 id="language-title">Выберите язык.</h2>
+      <p class="language-intro">Одна модель. Три языка.</p>
+      <ul class="language-list">
+        <li><a href="?lang=en" hreflang="en" data-language="en"><span lang="en" translate="no">English</span><span class="language-check" aria-hidden="true">✓</span></a></li>
+        <li><a href="?lang=ru" hreflang="ru" data-language="ru"><span lang="ru" translate="no">Русский</span><span class="language-check" aria-hidden="true">✓</span></a></li>
+        <li><a href="?lang=zh-CN" hreflang="zh-CN" data-language="zh-CN"><span lang="zh-CN" translate="no">简体中文</span><span class="language-check" aria-hidden="true">✓</span></a></li>
+      </ul>
+    </div>
+  </dialog>
 </body>
 </html>

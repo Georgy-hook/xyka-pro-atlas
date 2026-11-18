@@ -3,6 +3,7 @@
   'use strict';
 
   const byId = id => document.getElementById(id);
+  const t = window.AtlasLocale.t;
   const supported = new Set(['graphite', 'silver', 'blue', 'pink']);
 
   function visitTarget(id) {
@@ -65,14 +66,17 @@
       render(finish, isStatic) {
         if (isStatic !== staticView) {
           staticView = isStatic;
-          byId('explore-label').textContent = isStatic ? 'Открыть атлас' : 'Открыть в 3D';
+          byId('explore-label').textContent = isStatic
+            ? t('Открыть атлас', 'Explore the atlas', '打开图集')
+            : t('Открыть в 3D', 'Explore in 3D', '查看 3D 模型');
         }
         const selected = options.get(finish);
         if (!selected || image.dataset.finishShown === finish) return;
         const url = `media/hero-${finish}.webp`;
         if (url !== image.getAttribute('src')) image.src = url;
         image.dataset.finishShown = finish;
-        image.alt = `Чаша XYKA PRO, отделка «${selected.label}», вид со стороны экрана`;
+        image.alt = t(`Чаша XYKA PRO, отделка «${selected.label}», вид со стороны экрана`,
+          `${selected.label} XYKA PRO, viewed from the display side`, `${selected.label} XYKA PRO，屏幕侧视图`);
         byId('product-finish-name').textContent = selected.label;
         for (const [id, {button}] of options) {
           button.setAttribute('aria-pressed', String(id === finish));

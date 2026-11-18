@@ -3,12 +3,12 @@
   'use strict';
 
   const byId = id => document.getElementById(id);
-  const data = window.ATLAS_SCENE || {parts: [], groups: []};
-  const notes = window.ATLAS_NOTES || {};
+  const {t} = window.AtlasLocale;
+  const {data, notes} = window.AtlasLocale.catalogue(window.ATLAS_SCENE || {parts: [], groups: []}, window.ATLAS_NOTES || {});
   const finishes = Array.isArray(notes.finishes) ? notes.finishes : [];
   const defaultFinish = finishes.find(f => f.id === 'graphite')?.id || finishes[0]?.id || null;
   const parts = new Map(data.parts.map(part => [part.id, part]));
-  const groups = [{id: 'all', label: 'В сборе', no: '00'}, ...data.groups.map((group, i) => ({
+  const groups = [{id: 'all', label: t('В сборе', 'Assembled', '装配状态'), no: '00'}, ...data.groups.map((group, i) => ({
     id: group.id,
     label: group.shortLabel || (group.label || group.id).replace(/^\d+\s+/, ''),
     no: String(i + 1).padStart(2, '0')
@@ -25,6 +25,8 @@
   let passportID = null;
   let renderedSpecs = false;
   let registerKey = null;
+  let restoreScreenOff = false;
+  let restoringViewport = false;
 
   function buildTab(group) {
     const button = document.createElement('button');
@@ -34,7 +36,7 @@
     button.dataset.group = group.id;
     button.setAttribute('role', 'tab');
     button.setAttribute('aria-controls', 'node-sheet');
-    button.title = data.groups.find(item => item.id === group.id)?.label || 'Вся сборка';
+    button.title = data.groups.find(item => item.id === group.id)?.label || t('Вся сборка', 'Complete assembly', '完整装配模型');
     const folio = document.createElement('span');
     folio.className = 'node-no';
     folio.textContent = group.no;
@@ -75,7 +77,8 @@
   function chooseFinish(id) {
     state.finish = id;
     render();
-    announce(`Расцветка корпуса: ${byId('finish-name').textContent}`);
+    const label = byId('finish-name').textContent;
+    announce(t(`Расцветка корпуса: ${label}`, `Housing finish: ${label}`, `外壳配色：${label}`));
   }
 
   function focusPassport() {
@@ -118,11 +121,18 @@
     onFinish: chooseFinish,
     onViewport(status, catalogScreen = false) {
       state.viewport = status;
-      state.screenOn = catalogScreen;
+      state.screenOn = catalogScreen && restoreScreenOff ? drawing.setScreen(false) : catalogScreen;
+      restoreScreenOff = false;
       if (status === 'fallback' && state.isolated) {
         state.isolated = null;
         state.view = returnView;
       }
+      if (status === 'fallback' && restoringViewport) {
+        // The print always shows the assembled model, but the step list and part record still work.
+        state.explode = 0;
+        state.view = service.get(state.serviceStep)?.view || 'iso';
+      }
+      restoringViewport = false;
       render();
     }
   });
@@ -138,15 +148,82 @@
 
   const evidenceContext = {data, notes, onPart: id => selectPart(id, 'specs')};
 
+  function restoreLocaleContext() {
+    // Only an explicit language navigation supplies this small one-shot snapshot.
+    // IDs, not translated captions, bind it to the currently loaded catalogue.
+    let saved;
+    try {
+      saved = window.AtlasLocale.takeContext?.();
+    } catch {
+      return null;
+    }
+    if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return null;
+    if (pageTabs.some(tab => tab.dataset.page === saved.page)) state.page = saved.page;
+    if (finishes.some(finish => finish.id === saved.finish)) state.finish = saved.finish;
+
+    const pose = service.get(saved.serviceStep);
+    if (pose) {
+      // Step offsets and their focus part apply to the whole assembly, never to an isolated part.
+      state.serviceStep = pose.id;
+      state.view = pose.view;
+    } else {
+      if (groupIndex.has(saved.group)) state.group = saved.group;
+      const part = parts.get(saved.selected);
+      if (part && (state.group === 'all' || part.group === state.group)) {
+        state.selected = part.id;
+        if (saved.isolated === part.id) {
+          state.isolated = part.id;
+          state.view = 'part';
+        }
+      }
+      if (state.group === 'all' && Number.isFinite(saved.explode) && saved.explode >= 0 && saved.explode <= 1) {
+        state.explode = Math.round(saved.explode * 100) / 100;
+      }
+    }
+    const namedView = Array.from(document.querySelectorAll('[data-view]')).some(button => button.dataset.view === saved.view);
+    if (namedView) {
+      state.view = saved.view;
+      if (state.isolated) returnView = saved.view;
+    }
+    if (typeof saved.query === 'string') state.query = saved.query.slice(0, 512);
+    if (typeof saved.sub === 'string' && saved.sub && data.parts.some(part =>
+      (state.group === 'all' || part.group === state.group) && (part.subKey ?? part.sub) === saved.sub)) {
+      state.sub = saved.sub;
+    }
+    restoreScreenOff = saved.screenOn === false;
+    restoringViewport = true;
+    return Number.isFinite(saved.scrollY) && saved.scrollY >= 0 ? saved.scrollY : null;
+  }
+
+  function restoreScrollAfter(startup, top) {
+    if (top === null) return;
+    // Defer past the browser's own fragment navigation and the print/3D layout.
+    // Never move the reader back if they started navigating during a slow load.
+    const input = new AbortController();
+    const cancel = () => input.abort();
+    for (const type of ['pointerdown', 'keydown', 'wheel', 'touchstart']) {
+      window.addEventListener(type, cancel, {passive: true, signal: input.signal});
+    }
+    const loaded = document.readyState === 'complete' ? Promise.resolve() : new Promise(done => {
+      window.addEventListener('load', done, {once: true});
+    });
+    Promise.all([startup, loaded]).then(() => requestAnimationFrame(() => {
+      if (!input.signal.aborted) window.scrollTo({top, behavior: 'instant'});
+      input.abort();
+    }));
+  }
+
   function renderPassport() {
     const part = parts.get(state.selected);
     byId('register-pane').hidden = !!part;
     byId('passport').hidden = !part;
-    byId('to-register').querySelector('span').textContent = part ? 'К паспорту' : 'К ведомости';
+    byId('to-register').querySelector('span').textContent = part
+      ? t('К паспорту', 'Part record', '零件档案') : t('К ведомости', 'Parts list', '零件清单');
     if (part && passportID !== part.id) {
       byId('part-focus').textContent = part.label || part.id;
       byId('part-id').textContent = part.id;
-      byId('passport-number').textContent = `Поз. ${register.position(part.id)}`;
+      const number = register.position(part.id);
+      byId('passport-number').textContent = t(`Поз. ${number}`, `Item ${number}`, `序号 ${number}`);
       byId('passport').dataset.partId = part.id;
       window.AtlasEvidence.renderPassport(byId('passport-body'), part, evidenceContext);
       byId('passport').querySelector('.passport-scroll').scrollTop = 0;
@@ -172,13 +249,20 @@
     byId('node-sheet').setAttribute('aria-labelledby', `node-${group.id}`);
     const printOnly = state.viewport === 'fallback';
     const showPose = pose && !printOnly;
-    byId('figure-number').textContent = `Фиг. ${printOnly ? '00' : group.no}`;
+    const figure = printOnly ? '00' : group.no;
+    byId('figure-number').textContent = t(`Фиг. ${figure}`, `Fig. ${figure}`, `图 ${figure}`);
     byId('figure-number').hidden = Boolean(showPose);
     byId('step-link').hidden = !showPose;
     byId('to-service-view').hidden = !showPose;
-    if (showPose) byId('step-link').textContent = `Этап ${String(pose.ordinal).padStart(2, '0')}`;
-    byId('drawing-title').textContent = printOnly ? 'Печатный вид сборки' :
-      pose ? pose.title : state.isolated ? 'Осмотр детали' : group.id === 'all' ? 'Общий вид' : group.label;
+    if (showPose) {
+      const number = String(pose.ordinal).padStart(2, '0');
+      byId('step-link').textContent = t(`Этап ${number}`, `Stage ${number}`, `阶段 ${number}`);
+    }
+    const title = byId('drawing-title');
+    if (printOnly) title.textContent = t('Печатный вид сборки', 'Static assembly view', '静态装配图');
+    else if (pose) title.textContent = pose.title;
+    else if (state.isolated) title.textContent = t('Осмотр детали', 'Part inspection', '零件详视');
+    else title.textContent = group.id === 'all' ? t('Общий вид', 'Assembly overview', '装配总览') : group.label;
 
     const key = JSON.stringify([state.group, state.query, state.sub]);
     if (key !== registerKey) {
@@ -236,7 +320,8 @@
     returnView = 'iso';
     render('step');
     if (focus?.disabled) byId('service-step').focus({preventScroll: true});
-    announce(pose ? `Этап ${pose.ordinal}. ${pose.title}.` : 'Все детали возвращены в сборку.');
+    announce(pose ? t(`Этап ${pose.ordinal}. ${pose.title}.`, `Stage ${pose.ordinal}. ${pose.title}.`, `第 ${pose.ordinal} 阶段：${pose.title}。`)
+      : t('Все детали возвращены в сборку.', 'All parts are back in the assembly.', '所有零件已恢复至装配状态。'));
   }
 
   function selectPart(id, origin) {
@@ -257,7 +342,8 @@
       if (!narrow.matches) byId('drawing').scrollIntoView({block: 'start'});
     }
     if (origin !== 'drawing' || narrow.matches) focusPassport();
-    announce(`Выбрано: ${part.label || part.id}. CAD ID: ${part.id}`);
+    const label = part.label || part.id;
+    announce(t(`Выбрано: ${label}. CAD ID: ${part.id}`, `Selected: ${label}. CAD ID: ${part.id}`, `已选择：${label}。CAD ID：${part.id}`));
   }
 
   function closePassport(focusList) {
@@ -285,10 +371,13 @@
     if (narrow.matches) byId('drawing').scrollIntoView({block: 'start'});
     const target = state.isolated ? 'leave-isolation' : narrow.matches || fromField ? 'fit' : 'isolate';
     document.querySelector(`[data-action="${target}"]`).focus({preventScroll: true});
-    announce(state.isolated ? 'В поле показана только выбранная деталь.' : 'Деталь возвращена в текущий узел.');
+    announce(state.isolated
+      ? t('В поле показана только выбранная деталь.', 'Only the selected part is shown.', '当前视图只显示所选零件。')
+      : t('Деталь возвращена в текущий узел.', 'The part is back in its assembly.', '零件已返回当前组件。'));
   }
 
   function reset() {
+    restoreScreenOff = false;
     Object.assign(state, {
       group: 'all', selected: null, isolated: null, query: '', sub: '', view: 'iso', explode: 0,
       finish: defaultFinish, serviceStep: null, screenOn: drawing.setScreen(true)
@@ -296,7 +385,9 @@
     returnView = 'iso';
     registerKey = null;
     render('reset');
-    announce('Восстановлены сборка, изометрия и исходная расцветка. Разнос и фильтры сброшены.');
+    announce(t('Восстановлены сборка, изометрия и исходная расцветка. Разнос и фильтры сброшены.',
+      'Assembly, isometric view and original finish restored. Exploded view and filters reset.',
+      '已恢复完整装配模型、轴测视图和原始配色，并重置分解视图和筛选条件。'));
   }
 
   for (const tab of pageTabs) tab.addEventListener('click', () => switchPage(tab.dataset.page));
@@ -346,7 +437,8 @@
   });
 
   document.addEventListener('keydown', event => {
-    if (state.page !== 'assembly' || event.isComposing || event.ctrlKey || event.altKey || event.metaKey) return;
+    if (state.page !== 'assembly' || byId('language-dialog')?.hasAttribute('open')) return;
+    if (event.isComposing || event.ctrlKey || event.altKey || event.metaKey) return;
     const typing = event.target.closest('input, select, textarea, [contenteditable="true"]');
     if (event.key === '/' && !typing) {
       event.preventDefault();
@@ -359,9 +451,10 @@
     }
   });
 
+  const returnScrollY = restoreLocaleContext();
   window.AtlasUI = Object.freeze({getState: snapshot});
   render();
   document.documentElement.dataset.uiReady = 'true';
   window.dispatchEvent(new CustomEvent('atlas:ready', {detail: snapshot()}));
-  drawing.start();
+  restoreScrollAfter(drawing.start(), returnScrollY);
 })();

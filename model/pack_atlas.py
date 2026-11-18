@@ -113,7 +113,13 @@ def check(root):
             or ids != {p['id'] for p in scene['parts']} or ids != {mesh['name'] for mesh in doc['meshes']}
             or len(ids) != qa['physicalFeatures'] or group_ids != set(qa['groupCounts'])):
         raise ValueError('Mesh and register mismatch')
-    for name in ('atlas-assembly', 'atlas-mainboard'):
+    readme_views = {'atlas-assembly': 'all', 'atlas-model': 'all', 'atlas-battery': 'Battery', 'atlas-mainboard': 'MainPCB'}
+    for name, group in readme_views.items():
+        state = qa['screenshotMetadata'][name]
+        expected = len(ids) if group == 'all' else sum(part['group'] == group for part in scene['parts'])
+        if (state['lang'] != 'en' or state['group'] != group or state['visibleParts'] != expected
+                or state['serviceStep'] or state['explode'] != 0):
+            raise ValueError(f'English screenshot shows the wrong model state: {name}')
         if checksum(root/'docs/screenshots'/(name+'.png')) != qa['screenshotSHA256'][name]:
             raise ValueError(f'Screenshot not from verified release: {name}')
     if {finish: checksum(root / path) for finish, path in STUDIO_IMAGES.items()} != qa['product']['imageSHA256']:

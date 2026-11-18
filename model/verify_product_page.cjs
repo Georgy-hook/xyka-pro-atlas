@@ -46,10 +46,11 @@ async function checkOptions(page, root) {
   return digests;
 }
 
-async function checkFinish(page, id) {
+async function checkFinish(page, id, expectedLabel) {
   const {finish, viewport} = await page.evaluate(() => AtlasUI.getState());
   assert.equal(finish, id, 'Primary app finish');
-  const label = await page.evaluate(id => ATLAS_NOTES.finishes.find(f => f.id === id).label, id);
+  // Historical Russian checks use the original issued notes as their oracle, not a translation.
+  const label = expectedLabel ?? await page.evaluate(id => ATLAS_NOTES.finishes.find(f => f.id === id).label, id);
   assert.equal(await page.locator('#product-finish-name').innerText(), label);
   assert.equal(await page.locator('#finish-name').textContent(), label);
   for (const [selector, attribute] of [['#product-finishes', 'data-product-finish'], ['#finishes', 'data-finish']]) {
@@ -150,4 +151,104 @@ async function checkNavigation(page, firstStep, turnSheet, checkSheets) {
   await inFrame(page.locator('#atlas-canvas'), .25, 'Service CTA navigates to the working drawing, not just a new state');
 }
 
-module.exports = {finishes, productButton, inFrame, checkOptions, checkFinish, checkLayout, checkNavigation};
+// The chooser, camera presets, slider and register are the real site's. No DOM edits,
+// private scene setters, replacement renderer, CSS overrides, overlays or cropped PNGs.
+async function captureEnglish(page, {data, frame, frames, checkWorld, outputs, report}) {
+  const hash = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
+  const rest = await frame(page);
+  const full = Object.fromEntries(data.ids.map(id => [id, data.byId[id].explode]));
+  assert.equal(data.ids.length, 660);
+  assert.equal(data.memberIDs('Battery').length, 22);
+  assert.equal(data.memberIDs('MainPCB').length, 420);
+  report.screenshotMetadata = {};
+
+  async function photograph(key, group, presentation, view, explode = 0) {
+    const lang = await page.locator('html').getAttribute('lang');
+    const url = new URL(page.url());
+    assert.equal(url.protocol, 'file:');
+    assert.equal(url.searchParams.get('lang'), 'en');
+    assert.equal(lang, 'en');
+    assert.equal(await page.evaluate(() => AtlasLocale.lang), lang);
+    await page.mouse.move(2, 1);
+    if (presentation === 'hero') {
+      assert.ok(await page.evaluate(() => Math.abs(scrollY) <= 1), `${key}: genuine first screen`);
+      await checkFinish(page, 'graphite', 'Graphite');
+      await checkLayout(page);
+    } else {
+      // Include the selected subsystem, full field and real register in the same viewport.
+      await page.locator('#group-tabs').evaluate(el => el.scrollIntoView({block: 'start', behavior: 'instant'}));
+      await inFrame(page.locator(`[data-group="${group}"][aria-selected="true"]`), .97, `${key}: current subsystem`);
+      await inFrame(page.locator('#atlas-canvas'), .99, `${key}: actual WebGL canvas`);
+      await inFrame(page.locator('#drawing-title'), .99, `${key}: drawing title`);
+      await inFrame(page.locator('#register-title'), .99, `${key}: register title`);
+      await inFrame(page.locator('#part-list [data-part-id]').first(), .95, `${key}: actual CAD register entries`);
+      assert.match(await page.locator('#register-title').innerText(), /parts?|register|catalog|index/i);
+      const firstName = await page.locator('#part-list .part-name').first().innerText();
+      assert.match(firstName, /[a-z]{3}/i, `${key}: actual English register copy`);
+      assert.doesNotMatch(firstName, /[а-яё]/i);
+      assert.equal(await page.locator('#group-count').innerText(), String(group === 'all' ? data.ids.length : data.memberIDs(group).length));
+      assert.equal(await page.locator('#part-search').inputValue(), '');
+      assert.equal(await page.locator('#subsection').inputValue(), '');
+      assert.ok(await page.locator('#passport').isHidden());
+      assert.ok(await page.locator('#picked-caption').isHidden());
+      assert.ok(await page.locator('#print-fallback').isHidden());
+      assert.equal(await page.locator('#part-list button:hover, #atlas-canvas:hover').count(), 0);
+    }
+
+    const state = await page.evaluate(() => AtlasUI.getState());
+    const expected = {page: 'assembly', viewport: 'ready', group, view, explode, finish: 'graphite',
+      selected: null, isolated: null, serviceStep: null, query: '', sub: ''};
+    for (const [k, value] of Object.entries(expected)) assert.equal(state[k], value, `${key}: ${k}`);
+    const actual = await frame(page);
+    checkWorld(actual, rest, explode ? full : {}, `${key}: observed pose`);
+    const ids = [...actual.shown].sort();
+    assert.deepEqual(ids, [...(group === 'all' ? data.ids : data.memberIDs(group))].sort(), `${key}: visible physical leaves`);
+    const listed = await page.locator('#part-list [data-part-id]').evaluateAll(rows => rows.map(r => r.dataset.partId).sort());
+    assert.deepEqual(listed, ids, `${key}: register describes the same physical scene`);
+    const info = {lang, presentation, group: state.group, visibleParts: ids.length, listedParts: listed.length,
+      visibleIDsSHA256: hash(ids.join('\n')), view: state.view, explode: state.explode, serviceStep: state.serviceStep,
+      finish: state.finish, selected: state.selected, isolated: state.isolated, viewport: page.viewportSize()};
+    if (presentation === 'drawing') {
+      info.direction = actual.direction;
+      info.projected = await page.evaluate(ids => __atlasFrame.projection(ids), ids);
+      const {left, top, right, bottom} = info.projected;
+      assert.ok(Math.min(left, top, 1 - right, 1 - bottom) >= .005, `${key}: no cropped geometry`);
+      assert.ok(Math.max(right - left, bottom - top) >= .65, `${key}: prominent model in the drawing field`);
+      if (group === 'Battery') {
+        assert.ok(ids.includes('MechBatteryEnvelope') && ids.includes('MechRetailBatteryRuSpecInk') && !ids.includes('MechPackSeatSockets'));
+        assert.ok(info.direction[2] < -.99, 'Look directly at the original printed specification, not the USB/back face');
+        info.specInk = await page.evaluate(() => __atlasFrame.projection(['MechRetailBatteryRuSpecInk'], true).inkField);
+        assert.ok(info.specInk.height >= 230 && info.specInk.width >= 65 && info.specInk.light >= .08 && info.specInk.dark >= .20,
+          `${key}: legible light print on a dark label, got ${JSON.stringify(info.specInk)}`);
+      } else if (group === 'MainPCB') {
+        assert.ok(ids.includes('PcMaskFace') && ids.includes('PcBuzzer_Body') && info.direction[2] > .9,
+          `${key}: real component side, not the unregistered routing side`);
+      }
+      if (explode) await inFrame(page.locator('#explode-value'), .95, 'Full explosion control');
+      info.frameSHA256 = await page.evaluate(async () => (await __atlasFrame.pixels()).all);
+    }
+    await frames(page);
+    const png = await page.screenshot({path: path.join(outputs, `${key}.png`), fullPage: false, animations: 'disabled'});
+    report.screenshotSHA256[key] = hash(png);
+    report.screenshotMetadata[key] = info;
+  }
+
+  await photograph('atlas-assembly', 'all', 'hero', 'iso');
+  await page.locator('#explore-model').click();
+  await photograph('atlas-model', 'all', 'drawing', 'iso');
+  await page.locator('[data-group="Battery"]').click();
+  await page.locator('[data-view="front"]').click();
+  await photograph('atlas-battery', 'Battery', 'drawing', 'front');
+  await page.locator('[data-group="MainPCB"]').click();
+  await photograph('atlas-mainboard', 'MainPCB', 'drawing', 'iso');
+  await page.locator('[data-action="reset"]').click();
+  await page.locator('#explode-slider [role="slider"]').press('End');
+  await photograph('atlas-exploded', 'all', 'drawing', 'iso', 1);
+  await page.locator('[data-action="reset"]').click();
+  await page.setViewportSize({width: 390, height: 844});
+  await page.evaluate(() => window.scrollTo({top: 0, left: 0, behavior: 'instant'}));
+  await frames(page);
+  await photograph('atlas-mobile', 'all', 'hero', 'iso');
+}
+
+module.exports = {finishes, productButton, inFrame, checkOptions, checkFinish, checkLayout, checkNavigation, captureEnglish};
