@@ -22,6 +22,24 @@ W, H = 420, 297
 INK, MUTE, TEAL, ORANGE = '#172e35', '#496168', '#006b69', '#924719'
 LINE, PALE, STUDIO_BG = '#a8b8b5', '#f2f6f3', '#f1f4f1'
 MM = 72 / 25.4  # points per physical mm
+
+# Functional section key, not a material specification. The swatch on paper
+# and the cut B-rep always share the same colour AND monochrome hatch.
+_HATCHES = {
+    'Housing': ('#d5e8e4', '///'), 'LowerBody': ('#bfcfdc', '\\\\'),
+    'Pod': ('#ebcd97', '||'), 'Heater': ('#e4bbb0', 'xx'), 'Battery': ('#dbd5e6', '..'),
+    'Fascia': ('#d5dfec', '//'), 'LightRing': ('#c9e6ec', '--'), 'Mounts': ('#d0c0a8', '++'),
+    'MainPCB': ('#bbd1ac', '/'), 'DisplayPCB': ('#d6e6bf', '\\'),
+    'FilmWindow': ('#c4ceea', '|'), 'Glass': ('#b8e4ec', '-'), 'KeyMembrane': ('#d0c2df', 'oo'),
+    'OuterKey': ('#e5cab0', '//'), 'DisplaySeat': ('#cba77e', '++'),
+}
+_HATCH_FAMILY = {'PodBody': 'Pod', 'PodLid': 'Pod', 'PodScreen': 'Pod', 'HeatGuard': 'Heater'}
+
+
+def hatch_style(key):
+    return _HATCHES.get(_HATCH_FAMILY.get(key, key), ('#e3e7e4', '//'))
+
+
 SCALES = (35, 30, 25, 20, 16, 12.5, 10, 8, 6, 5, 4, 3, 2.5, 2, 1.5, 1.25,
           1, .8, 2/3, .5, .4, 1/3, .25, .2, .1, .05)
 
@@ -203,14 +221,11 @@ class Sheet:
                 p = PathPatch(path, transform=tra, facecolor=color, linewidth=0, edgecolor='none', zorder=4)
                 self.ax.add_patch(p)
                 p.set_clip_path(clip)
-        hatches = {'Housing': ('#e2eeea', '///'), 'Mounts': ('#ecdfca', '\\\\\\'),
-                   'MainPCB': ('#dbe6d5', 'xx'), 'DisplayPCB': ('#dbe6d5', 'xx'),
-                   'Heater': ('#ece5df', '\\\\\\'), 'Battery': ('#e3e3eb', '..')}
         for geom, root in proj.hatches:
             path = polygon_path(geom)
             if path is None:
                 continue
-            face, pattern = hatches.get(root, ('#e3e7e4', '//'))
+            face, pattern = hatch_style(root)
             p = PathPatch(path, transform=tra, facecolor=face, edgecolor='#647975',
                           linewidth=.22*MM, hatch=pattern, zorder=5)
             self.ax.add_patch(p)

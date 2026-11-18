@@ -35,7 +35,7 @@ def capture(source, output):
     def expand(node, depth=0):
         while depth <= 3 and node:
             text = node.text(0)
-            show = (depth == 0 or text.startswith('A  •') or 'GYS005-S-088-A4.3 · сторона' in text)
+            show = depth == 0 or text.startswith(('A  •', 'I  •', 'II  •'))
             node.setExpanded(show)
             if show:
                 for i in range(node.childCount()):

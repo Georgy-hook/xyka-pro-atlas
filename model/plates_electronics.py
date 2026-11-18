@@ -1,9 +1,12 @@
 """Mounting-side PCB plans and enlarged, registered regions of the same vector view."""
 
+from types import SimpleNamespace
+
 import numpy as np
 
-from plates_graphics import Sheet, LINE, MUTE, ORANGE, SCALES, TEAL, est, nstr, ratio
-from plates_scene import choose, projected_box, substrate
+from plates_graphics import Sheet, LINE, MUTE, ORANGE, SCALES, TEAL, est, hatch_style, nstr, ratio
+from plates_render import root_anchors
+from plates_scene import camera, choose, frame_box, projected_box, substrate
 
 
 def landmark(items, *names, avoid=()):
@@ -91,51 +94,125 @@ def pcb(a):
     return s
 
 
+def _cut_ticks(s, box, y):
+    """Mark the section on the registered detail, without drawing over the switches."""
+    for edge, side in ((box[0], -1), (box[0] + box[2], 1)):
+        x = edge + side * 3.4
+        s.line([(edge + side * .6, y), (edge + side * 5.2, y)], color=TEAL, lw=.32)
+        s.line([(x, y - 5), (x, y)], color=TEAL, lw=.23)
+        s.arrow((x, y), (0, -1), TEAL)
+        s.label(x, y - 7.2, 'К', 8.2, color=TEAL, bold=True, align='center')
+
+
+def _key_views(s, a, frame, sub, switches, membrane, station_v):
+    """Isolate the actual silicone and section the installed row, not an offset diagram."""
+    s.line([(157, 133), (406, 133)], lw=.18)
+    s.caption(157, 122, 'Г3', 'Силиконовая мембрана', 'Отдельная деталь, вид со стороны клавиш')
+    oblique = camera((.30, -.94, 1.24), (0, 1, 0)) @ frame
+    m = s.geometry(a.line(membrane, oblique), (159, 66, 105, 42), cap=5, weight=.24)
+    s.bar(159, 58, m.scale, 5)
+    s.label(263, 58.5, ratio(m.scale), 8.3, color=MUTE, align='right')
+    s.label(159, 47, 'Одно полотно, три выступа над толкателями.\nСкрытый профиль и толщины оценочные.',
+            8.6, color=MUTE, valign='top')
+
+    fascia = a.scene.by.get('Fascia', ())
+    caps = [i for i in fascia if i.name.startswith(('MechOuterKeyL', 'MechOuterKeyC', 'MechOuterKeyR'))]
+    # The cut projector unions exposed material by root. Keep the silicone
+    # distinct from the PCB; qualify the cache name, not the native object.
+    def layer(items, role):
+        return [SimpleNamespace(name=f'{i.name}:{role}', shape=i.shape, root=role) for i in items]
+
+    # With +u across and +w up, the eye is at -v. station_v and the plane
+    # depth are projected WORLD mm; do not subtract the board origin again.
+    cross = np.stack((frame[0], frame[2], -frame[1]))
+    cut_items = [sub, *switches, *layer(membrane, 'KeyMembrane'), *layer(caps, 'OuterKey')]
+    section = a.section(cut_items, -station_v, cross)
+    s.caption(277, 122, 'Г4', 'Разрез К–К', 'Через средний толкатель, взгляд в сторону дисплея')
+    m = s.geometry(section, (279, 66, 125, 42), cap=5, weight=.21)
+    s.bar(279, 58, m.scale, 5)
+    s.label(404, 58.5, ratio(m.scale), 8.3, color=MUTE, align='right')
+    present = {role for _, role in section.hatches}
+    for x, role, name in ((279, 'DisplayPCB', 'Плата и кнопки'), (326, 'KeyMembrane', 'Силикон'),
+                          (360, 'OuterKey', 'Наружные клавиши')):
+        if role in present:
+            color, hatch = hatch_style(role)
+            s.rect(x, 45, 5.5, 3.4, color=color, edge='#647975', lw=.22, z=8).set_hatch(hatch)
+            s.label(x + 7, 46.7, name, 8.1, color=MUTE)
+    s.label(279, 37, 'Кромки за плоскостью К–К — без штриховки.', 8.3, color=MUTE)
+
+
 def ui(a):
     sc, root = a.scene, 'DisplayPCB'
-    s = Sheet(6, 'Плата панели: дисплей, кнопки и FPC',
-              '20260305A. Вид снаружи со стороны экрана; положение стекла и гибкого шлейфа соответствует CAD-сборке.',
-              'Электроника')
     items, frame = sc.by[root], sc.board_frame(root)
-    p = a.colors(root)
+    # Internal feature / App::Part ID, never a colour or a translated label.
+    membrane = [i for i in items if i.name == 'UiKeyMembrane' or 'UiKeyMembrane' in i.chain]
+    plan = [i for i in items if i not in membrane]
+    p = a.derived('color', plan, frame)
+    anchors = root_anchors(plan, frame, width=1300, name_mode=True)
     sub = substrate(sc, root)
-    glass = landmark(items, 'UiGlass', 'LCDGlass', 'glass', 'стекло', 'LCD')
-    button = landmark(items, 'UiPlungerC', 'UiSwitchC', 'button', 'кнопк')
-    fpc = landmark(items, 'UiFPC', 'flex', 'FPC', 'шлейф', avoid=('pin', 'площадки'))
-    shield = landmark(items, 'UiPerforated', 'perfor', 'перфор', 'щит', 'screen', 'mesh', 'metal')
-    keys = [glass, button, fpc, shield]
-    cps = [np.asarray(projected_box([i], frame)).reshape(2, 2).mean(0) for i in keys]
-    s.caption(14, 242, 'Г1', 'Лицевая сторона', 'По нормали к дисплейной PCB, со стороны кнопок')
+    glass = landmark(plan, 'UiGlass', 'LCDGlass', 'glass', 'стекло', 'LCD')
+    button = landmark(plan, 'UiPlungerC', 'UiSwitchC', 'button', 'кнопк')
+    fpc = landmark(plan, 'UiFlexFoot', 'UiFlexReturn', 'UiFPC', 'flex', 'FPC', 'шлейф', avoid=('pin', 'площадки'))
+    field = landmark(plan, 'UiPerforatedLand', 'perfor', 'перфор', 'metal')
+    keys = [glass, button, fpc, field]
+    s = Sheet(6, 'Плата панели: дисплей, кнопки и FPC',
+              '20260305A. Дисплей показан выключенным. Ширина и длина — в плоскости подложки, толщина — по её нормали.',
+              'Электроника')
+    convention = ('Условность Г1 и Г2: силиконовая мембрана скрыта' if membrane
+                  else 'По нормали к плате, со стороны кнопок')
+    s.caption(14, 242, 'Г1', 'Монтажная сторона', convention)
     m = s.geometry(p, (23, 51, 113, 166), cap=3, weight=.085)
-    bounds = projected_box([sub], frame)
-    lo, bot, hi, top = m.uvbox(bounds)
-    s.dim_h(lo, hi, bot, bot-7.4, est(bounds[2]-bounds[0], 1))
-    numbered_plan(s, [(n, m.uv(*v)) for n, v in a.plan_points(root, keys)], (17, 140))
-    s.bar(18, 30, m.scale, 10)
-    s.label(134, 30.5, ratio(m.scale), 8.4, color=MUTE, align='right')
-    s.line([(150, 26), (150, 246)], lw=.18)
+    low, high = frame_box([sub], frame)
+    width, length, thick = high - low
+    lo, bot, hi, _ = m.uvbox((*low[:2], *high[:2]))
+    s.dim_h(lo, hi, bot, bot-7.4, est(width, 1))
+    points = [(n, m.uv(*anchors[i.name])) for n, i in enumerate(keys, 1) if i.name in anchors]
+    numbered_plan(s, points, (17, 140))
+    s.bar(18, 34, m.scale, 10)
+    s.label(137, 34.5, ratio(m.scale), 8.4, color=MUTE, align='right')
+    s.label(17, 24, f'Подложка W × L × t:  {nstr(width)} × {nstr(length)} × {nstr(thick,2)} мм  ·  EST',
+            8.7, color=ORANGE, bold=True)
+    s.line([(150, 24), (150, 246)], lw=.18)
     s.small(159, 243, 'ДЕТАЛИ ПАКЕТА')
-    # Locate the photographed perforated zone and adjacent button rather than
-    # assuming that the unseen portion of the flex is routed in a known way.
-    uv = .50*cps[1] + .50*cps[3]
-    _detail(s, p, uv, (159, 142, 96, 74), 15, 'Г2', 'Кнопки и перфорация')
-    # Look along local +u. Longitudinal +v is horizontal; +w (towards the
-    # user) is upwards. This also works on an unplaced display subassembly.
-    profile = a.line(items, np.stack((frame[1], frame[2], frame[0])))
-    s.label(159, 122, 'Г3   Боковой профиль', 9.6, bold=True)
-    mp = s.geometry(profile, (159, 67, 96, 38), cap=2, weight=.24)
-    s.bar(159, 63, mp.scale, 10)
-    s.label(159, 46, 'Вправо — от кнопок к стеклу; вверх — от лицевой маски.', 7.9, color=MUTE)
-    s.line([(265, 26), (265, 246)], lw=.18)
-    s.small(274, 242, 'ВИДИМЫЕ УЗЛЫ')
-    entries = [('Дисплейная панель', 'Стекло закрывает часть PCB.\nТип контроллера дисплея — UNKNOWN.'),
-               ('Три тактовые кнопки', 'Отдельные механические корпуса\nи нажимные поверхности.'),
-               ('Гибкий шлейф', 'Янтарная лента и открытые контакты.\nРаспиновка не установлена.'),
-               ('Перфорированный участок', 'Расположение по макрофотографии.\nНазначение металлической зоны неизвестно.')]
+    if membrane:
+        switches = [i for i in plan if 'UiTactiles' in i.chain or i.name.startswith(('UiSwitch', 'UiPlunger'))]
+        # Frame all three switch bodies AND the flex termination. This is a crop
+        # of G1, not a second assembly or inferred circuitry behind the panel.
+        box = (159, 151, 103, 71)
+        uv = np.asarray(projected_box([*switches, fpc, field], frame)).reshape(2, 2)
+        du, dv = uv[1] - uv[0]
+        needed = max(du + 2, (dv + 2) * box[2] / box[3])
+        detail = _detail(s, p, uv.mean(0), box, needed, 'Г2', 'Ряд кнопок и контакты FPC')
+        station_v = frame_box([button], frame)[:, 1].mean()
+        _cut_ticks(s, box, detail.uv(0, station_v)[1])
+        _key_views(s, a, frame, sub, switches, membrane, station_v)
+    else:
+        # The older file has no membrane to suppress, section or describe.
+        uv = [np.asarray(projected_box([i], frame)).reshape(2, 2).mean(0) for i in (button, field)]
+        _detail(s, p, np.mean(uv, axis=0), (159, 142, 96, 74), 15, 'Г2', 'Кнопки и перфорация')
+        profile = a.line(plan, np.stack((frame[1], frame[2], frame[0])))
+        s.label(159, 122, 'Г3   Боковой профиль', 9.6, bold=True)
+        mp = s.geometry(profile, (159, 67, 96, 38), cap=2, weight=.24)
+        s.bar(159, 63, mp.scale, 10)
+        s.label(159, 46, 'Вправо — от кнопок к стеклу; вверх — от лицевой маски.', 7.9, color=MUTE)
+
+    s.line([(270, 138 if membrane else 26), (270, 246)], lw=.18)
+    s.small(279, 242, 'ПОЗИЦИИ НА ПЛАТЕ')
+    entries = [('Стекло дисплея', 'Показано стекло, а не граница активных пикселей.\nТип контроллера не установлен.'),
+               ('Три тактовые кнопки', 'У каждой — корпус и собственный толкатель.'),
+               ('Гибкий шлейф', 'Видны лента и контакты. Распиновка неизвестна.'),
+               ('Перфорированный участок', 'Назначение металлической зоны не установлено.')]
     for j, (name, note) in enumerate(entries):
-        s.list_entry(274, 227-38*j, j+1, name, note)
-    s.label(274, 56, 'Круглые площадки на кромке показаны по фото;\nконтактное назначение не назначено.', 9.0, color=MUTE, valign='top')
-    s.label(274, 40, f'Подложка: {nstr(bounds[2]-bounds[0],1)} × {nstr(bounds[3]-bounds[1],1)} мм  ·  EST',
-            9.0, color=ORANGE, bold=True)
-    s.label(274, 31, 'Источники: IMG_8917, 8918.', 8.3, color=MUTE)
+        s.list_entry(279, 228 - (23 if membrane else 37)*j, j+1, name, note)
+    if not membrane:
+        s.label(279, 56, 'Круглые площадки на кромке показаны по фото;\nих назначение не подтверждено.',
+                9.0, color=MUTE, valign='top')
+    if any(i.name == 'MechCoverWindow' and 'MechFrontFilm' in i.chain for i in sc.by.get('Fascia', ())):
+        s.label(279, 31 if membrane else 38,
+                'Съёмная лицевая плёнка кассеты не показана.\nЕё прозрачное окно и стекло LCD — разные детали.',
+                8.3, color=MUTE, valign='top')
+    source = 'Плата: IMG_8917, IMG_8918.'
+    if membrane:
+        source += '   Мембрана: владелец; фото HookahX.'
+    s.label(159 if membrane else 279, 24, source, 8.3, color=MUTE)
     return s

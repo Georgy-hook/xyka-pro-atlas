@@ -524,6 +524,13 @@ def run(model, photos, out, individual=False):
             if original.size != (1152, 2048):
                 raise ValueError(f'Wrong photo resolution: {original.size}')
             shapes = board_shapes(doc, cfg['group'])
+            removed = []
+            if cfg['photo'] == 'IMG_8917.jpg' and 'UiKeyMembrane' in shapes:
+                # The original shows the loose black strip on the table below
+                # the board and three exposed cream actuators, not a fitted pad.
+                del shapes['UiKeyMembrane']
+                removed.append('UiKeyMembrane')
+                cfg = dict(cfg, limit=cfg['limit'] + ' На исходном кадре силиконовая накладка снята.')
             if cfg['substrate'] not in shapes:
                 raise KeyError(cfg['substrate'])
             obs = observations(cfg['points'], shapes)
@@ -544,6 +551,7 @@ def run(model, photos, out, individual=False):
                                 photo=cfg['photo'], photo_sha256=cfg['sha256'],
                                 model=model.name, model_sha256=model_digest, crop=cfg['crop'],
                                 board=cfg['group'], H_board_mm_to_photo_px=h.tolist(),
+                                removed_in_photographed_state=removed,
                                 faces_sampled=n_faces, registered_physical_leaves=len(shapes),
                                 statistics_px=metrics, points=[dict(id=p.tag, role=p.role, name=p.name,
                                     reference=p.ref, uv_mm=p.uv.tolist(), observed_px=p.pick.tolist(),

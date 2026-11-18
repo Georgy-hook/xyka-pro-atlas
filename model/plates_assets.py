@@ -1,19 +1,24 @@
 """Collect and (optionally) cache derived views; no edits to the input FCStd."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from hashlib import sha256
 from pathlib import Path
 from types import SimpleNamespace
 import gzip
 import json
+import os
+import tempfile
 
+import FreeCAD  # Initialise the Part extension before use.
+import Part
 import numpy as np
 from PIL import Image
 from shapely import from_wkb
 
 import plates_render as studio
 import plates_vector as vector
-from plates_scene import RIGHT, STUDIO, EXPLODED, board_layers, camera, choose
+from plates_scene import RIGHT, board_layers, camera
+from plates_service import ServiceViews
 
 
 def progress(text):
@@ -40,19 +45,27 @@ class Cut:
 class Assets:
     def __init__(self, scene, cache=None, quick=False):
         self.scene = scene
+        self.service = ServiceViews(scene)
+        self.service.check()
         self.cache = None
         self.memo = {}
         self.quick = quick
         self.fingerprint = digest(scene.src)
         if cache is not None:
             inputs = [Path(__file__), Path(studio.__file__), Path(vector.__file__),
-                      Path(__file__).with_name('plates_scene.py')]
+                      Path(__file__).with_name('plates_scene.py'), Path(__file__).with_name('plates_service.py')]
             key = sha256((self.fingerprint + ''.join(digest(p) for p in inputs)).encode()).hexdigest()[:20]
             self.cache = Path(cache) / key
             self.cache.mkdir(parents=True, exist_ok=True)
 
     def derived(self, mode, items, frame, value=None):
-        key = [mode, [i.name for i in items], np.asarray(frame).round(7).tolist(), value]
+        # A leaf may also appear in an exploded, locally aligned or cropped
+        # B-rep projection. The installed and displaced poses are not interchangeable.
+        def identity(i):
+            p = i.shape.Placement
+            return (i.name, i.root, tuple(round(v, 8) for v in (*p.Base, *p.Rotation.Q)))
+
+        key = [mode, [identity(i) for i in items], np.asarray(frame).round(7).tolist(), value]
         name = sha256(json.dumps(key, ensure_ascii=False).encode()).hexdigest()[:20]
         if name in self.memo:
             return self.memo[name]
@@ -72,8 +85,24 @@ class Assets:
             elif mode == 'section':
                 p = vector.cut_view(items, frame, value)
             else:
-                visible = studio.visible_names(items, frame, width=1380)
-                keep = [i for i in items if i.name in visible]
+                # The window stays installed. Its two transmitting optical
+                # surfaces should not hide the LCD edges in an exterior
+                # line drawing. Keep the actual thickness/rim faces in HLR.
+                windows = [i for i in items if i.name == 'MechCoverWindow'
+                           and float(getattr(i.obj, 'OpticalTransparency', 0)) > 0]
+                opaque = [i for i in items if i not in windows]
+                visible = studio.visible_names(opaque, frame, width=1380)
+                keep = [i for i in opaque if i.name in visible]
+                for item in windows:
+                    normal = self.scene.board_frame('DisplayPCB')[2]
+                    walls = []
+                    for face in item.shape.Faces:
+                        plane = face.findPlane(1e-6)
+                        if plane is None or abs(normal @ tuple(plane.Axis)) < .99999:
+                            walls.append(face)
+                    if not walls:
+                        raise ValueError(f'Cannot identify native window rim: {item.name}')
+                    keep.append(replace(item, shape=Part.makeCompound(walls)))
                 if not keep:
                     raise ValueError('No visible leaves in hidden-line view')
                 p = vector.line_view(keep, frame)
@@ -85,10 +114,17 @@ class Assets:
                             fills=[(poly.wkb_hex, c) for poly, c in p.fills],
                             hatches=[(poly.wkb_hex, c) for poly, c in p.hatches],
                             bounds=[float(n) for n in p.bounds])
-                tmp = path.with_suffix('.partial')
-                with gzip.open(tmp, 'wt', encoding='utf-8', compresslevel=4) as f:
-                    json.dump(data, f, separators=(',', ':'))
-                tmp.replace(path)
+                # Distinct paper-proof processes may produce the same view.
+                # Readers only ever see completed, source-keyed geometry.
+                fd, name_tmp = tempfile.mkstemp(dir=path.parent, prefix='.hlr-', suffix='.partial')
+                os.close(fd)
+                tmp = Path(name_tmp)
+                try:
+                    with gzip.open(tmp, 'wt', encoding='utf-8', compresslevel=4) as f:
+                        json.dump(data, f, separators=(',', ':'))
+                    tmp.replace(path)
+                finally:
+                    tmp.unlink(missing_ok=True)
         self.memo[name] = p
         return p
 
@@ -112,15 +148,7 @@ class Assets:
         return self.derived('section', items, frame, float(depth))
 
     def raster(self, mode):
-        scene = self.scene
-        views = {
-            'assembled': (scene.items, STUDIO, None, (1380, 1510)),
-            'exploded': (scene.items, EXPLODED, scene.offsets, (1990, 1500)),
-            'electronics': (scene.subset('MainPCB', 'Harness', 'DisplayPCB'),
-                            scene.board_studio_frame('MainPCB'), None, (1460, 1480)),
-            'electronics-front': (scene.subset('MainPCB', 'Harness', 'DisplayPCB'),
-                                  scene.board_studio_frame('DisplayPCB'), None, (1060, 1380)),
-        }
+        views = self.service.specs()
         if mode not in views:
             raise ValueError(mode)
         items, frame, offsets, size = views[mode]
@@ -139,7 +167,7 @@ class Assets:
                               bgcolor='#f1f4f1', padding=.075)
             # A neutral black lift for print prevents adjacent dark housing parts
             # from closing up. It changes no geometry; the paper white is fixed.
-            if mode in ('assembled', 'exploded'):
+            if mode in ('assembled', 'exploded', 'upper-unit', 'lower-unit', 'film-service', 'key-service'):
                 lut = [round(white*(n/white)**.76) if n < white else n
                        for white in (241, 244, 241) for n in range(256)]
                 r = SimpleNamespace(image=r.image.point(lut), extent=r.extent)
@@ -149,17 +177,28 @@ class Assets:
         self.memo[key] = r
         return r
 
+    def anchors(self, mode, names=False):
+        """Pick on precisely the same registered leaves and poses as the image."""
+        key = f'anchors:{mode}:{names}'
+        if key not in self.memo:
+            items, frame, offsets, _ = self.service.specs()[mode]
+            self.memo[key] = studio.root_anchors(items, frame, offsets=offsets, width=1250, name_mode=names)
+        return self.memo[key]
+
     def cuts(self):
         """Cut B crosses an actual post centre, not the middle of an unrelated gap."""
         s = self.scene
-        housing = s.by['Housing']
+        housing = s.by['Housing'] + s.by.get('LowerBody', [])
         x = (min(i.box[0, 0] for i in housing) + max(i.box[1, 0] for i in housing)) / 2
-        targets = [*s.by['Mounts'], *housing]
-        mount = choose(targets, 'DisplaySeatL', 'DisplaySeatR', 'panelboss', 'pcbpost', 'mainpost', 'uipost', 'boss', 'стойк',
-                       'бобышк', 'standoff', 'опора', required=False)
+        # Never take a general-purpose base boss or arbitrary fastening leaf:
+        # the B–B locator must pass through the *actual display mounting seat*.
+        target_roots = ('Fascia', 'Mounts', 'Housing')
+        targets = {i.name: i for root in target_roots for i in s.by.get(root, [])}
+        seat_ids = ('MechDisplaySeatL', 'MechDisplaySeatR', 'UiDisplaySeatL', 'UiDisplaySeatR',
+                    'MechUiSeatL', 'MechUiSeatR', 'DisplaySeatL', 'DisplaySeatR')
+        mount = next((targets[k] for k in seat_ids if k in targets), None)
         if mount is None:
-            # Do not imply this is a post; use the actual first mounting leaf.
-            mount = s.by['Mounts'][0]
+            raise ValueError('No known display seat in Fascia, Mounts or Housing; do not issue an invented section B')
         # In locator B1 the observer looks along local +w. A plane normal to
         # local u therefore appears edge-on at this u, even after yaw or roll.
         # The side view B2 retains gravity vertical where geometrically possible.
@@ -175,12 +214,13 @@ class Assets:
 
     def cut_items(self, mounting=False):
         scene = self.scene
-        items = list(scene.by['Housing'])
-        items.extend(scene.by['Mounts'])
+        structural = ('Housing', 'LowerBody', 'Fascia', 'LightRing', 'Mounts')
+        items = [i for root in structural for i in scene.by.get(root, [])]
         if not mounting:
-            items.extend(scene.subset('Battery', 'Heater'))
+            items.extend(i for root in ('Battery', 'Heater', 'Pod') for i in scene.by.get(root, []))
         for root in ('MainPCB', 'DisplayPCB'):
             items.extend(board_layers(scene, root))
         # Show the actual glass plane and supporting LCD stack in section.
         items.extend(i for i in scene.by['DisplayPCB'] if i.name in ('UiBacking', 'UiCell', 'UiRim', 'UiGlass'))
+        items.extend(i for i in scene.by['DisplayPCB'] if 'UiKeyMembrane' in (i.name, *i.chain))
         return items

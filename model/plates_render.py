@@ -9,6 +9,7 @@ import atexit
 from collections import OrderedDict
 from dataclasses import dataclass
 from functools import lru_cache
+from numbers import Real
 from operator import index
 import re
 from threading import current_thread, main_thread
@@ -25,7 +26,7 @@ from vtkmodules.vtkRenderingCore import (
     vtkActor, vtkLight, vtkPolyDataMapper, vtkRenderer, vtkRenderWindow,
     vtkWindowToImageFilter,
 )
-import vtkmodules.vtkRenderingOpenGL2  # Register the platform render window/mapper.
+from vtkmodules.vtkRenderingOpenGL2 import vtkDepthPeelingPass, vtkOpenGLFXAAPass, vtkRenderStepsPass
 
 
 @dataclass(frozen=True)
@@ -50,7 +51,7 @@ class _Mesh:
 
 @dataclass
 class _Scene:
-    surface: vtkPolyData
+    layers: list[tuple[float, vtkPolyData]]  # (opacity, surface) in a common camera frame
     extent: tuple[float, float, float, float]
     depth: float
     labels: list[str]
@@ -143,8 +144,16 @@ def _size(width, height):
     return width, height
 
 
-def _scene(items, frame, width, height, padding, offsets, *, id_key=None):
-    """Assemble one centered, view-space surface for either lighting or picking."""
+def _opacity(item):
+    # A saved CAD property, not a name, ViewObject setting or material guess.
+    percent = getattr(getattr(item, 'obj', None), 'OpticalTransparency', None)
+    if isinstance(percent, Real) and not isinstance(percent, bool) and 0 <= percent <= 100:
+        return (100.0 - float(percent)) / 100.0
+    return 1.0
+
+
+def _scene(items, frame, width, height, padding, offsets, *, id_key=None, opaque_only=False):
+    """Project material batches (or flat pick IDs), fit ALL leaves, then recenter once."""
     if current_thread() is not main_thread():
         raise RuntimeError('Call the offscreen renderer on the process main thread')
     basis = np.asarray(frame, dtype=np.float64)
@@ -153,13 +162,13 @@ def _scene(items, frame, width, height, padding, offsets, *, id_key=None):
     if not np.isfinite(padding) or padding < 0:
         raise ValueError('padding must be finite and non-negative')
     shifts = {}
-    for root, offset in (offsets or {}).items():
+    for name, offset in (offsets or {}).items():
         delta = np.asarray(offset, dtype=np.float64)
         if delta.shape != (3,) or not np.isfinite(delta).all():
-            raise ValueError(f'Expected a finite world-mm offset for {root}')
-        shifts[root] = basis @ delta
+            raise ValueError(f'Expected a finite world-mm offset for {name}')
+        shifts[name] = basis @ delta
 
-    labels, blocks = {}, []
+    labels, groups = {}, {}
     for item in items:
         mesh = _mesh(item.shape)
         if mesh is None:
@@ -170,18 +179,51 @@ def _scene(items, frame, width, height, padding, offsets, *, id_key=None):
             if i > 0xffffff:
                 raise ValueError('Too many leaves for a 24-bit ID pass')
             rgb = (i & 255, (i >> 8) & 255, i >> 16)
+            # Anchors pick physical sheets; the opaque HLR prepass sees through them.
+            opacity = 0.0 if opaque_only and _opacity(item) < 1.0 else 1.0
         else:
             rgb = _rgb(item.color)
-        blocks.append((mesh, shifts.get(item.root), rgb))
-    if not blocks:
+            opacity = _opacity(item)
+        # Each physical leaf can have its own service motion. Prefer its total
+        # world translation; never add the legacy group shift on top of it.
+        shift = shifts.get(item.name, shifts.get(item.root))
+        groups.setdefault(opacity, []).append((mesh, shift, rgb))
+    if not groups:
         return None
 
+    batches = {alpha: _project(blocks, basis, lit=id_key is None) for alpha, blocks in groups.items()}
+    low = np.min([xyz.min(axis=0) for xyz, _, _, _ in batches.values()], axis=0)
+    high = np.max([xyz.max(axis=0) for xyz, _, _, _ in batches.values()], axis=0)
+    center = (low + high) * 0.5
+    du, dv, depth = high - low
+    pitch = max(du / width, dv / height, 1e-12) * (1.0 + 2.0 * padding)
+    hu, hv = 0.5 * width * pitch, 0.5 * height * pitch
+    extent = (center[0] - hu, center[1] - hv, center[0] + hu, center[1] + hv)
+
+    reflected = np.linalg.det(basis) < 0
+    layers = []
+    for opacity, (uvw, triangles, colors, normals) in batches.items():
+        if opacity == 0.0:
+            continue  # A clear leaf contributes bounds but neither color nor depth.
+        uvw -= center  # Recenter in double before upload to the GPU.
+        if reflected:
+            triangles = triangles[:, ::-1]  # Preserve front faces in a reflected frame.
+        surface = _polydata(uvw.astype(np.float32), triangles)
+        surface.GetPointData().SetScalars(numpy_to_vtk(colors, deep=True))
+        if normals is not None:
+            surface.GetPointData().SetNormals(numpy_to_vtk(normals, deep=True))
+        layers.append((opacity, surface))
+    return _Scene(layers, tuple(map(float, extent)), float(depth), list(labels))
+
+
+def _project(blocks, basis, *, lit):
+    """Pack one draw's vertices, indices, CAD colors and optional normals."""
     nv = sum(len(m.xyz) for m, _, _ in blocks)
     nt = sum(len(m.triangles) for m, _, _ in blocks)
     uvw = np.empty((nv, 3), dtype=np.float64)
     triangles = np.empty((nt, 3), dtype=np.int32)
     colors = np.empty((nv, 3), dtype=np.uint8)
-    normals = None if id_key is not None else np.empty((nv, 3), dtype=np.float32)
+    normals = np.empty((nv, 3), dtype=np.float32) if lit else None
     rotation = basis.T.astype(np.float32)
     v0 = t0 = 0
     for mesh, shift, rgb in blocks:
@@ -195,28 +237,10 @@ def _scene(items, frame, width, height, padding, offsets, *, id_key=None):
             normals[v0:v1] = mesh.normals @ rotation
         v0, t0 = v1, t1
 
-    low, high = uvw.min(axis=0), uvw.max(axis=0)
-    center = (low + high) * 0.5
-    du, dv, depth = high - low
-    pitch = max(du / width, dv / height, 1e-12) * (1.0 + 2.0 * padding)
-    hu, hv = 0.5 * width * pitch, 0.5 * height * pitch
-    extent = (center[0] - hu, center[1] - hv, center[0] + hu, center[1] + hv)
-    uvw -= center  # Recenter in double before upload to the GPU.
-    if np.linalg.det(basis) < 0:
-        triangles = triangles[:, ::-1]  # Preserve front faces in a reflected frame.
-    surface = _polydata(uvw.astype(np.float32), triangles)
-    surface.GetPointData().SetScalars(numpy_to_vtk(colors, deep=True))
-    if normals is not None:
-        surface.GetPointData().SetNormals(numpy_to_vtk(normals, deep=True))
-    return _Scene(surface, tuple(map(float, extent)), float(depth), list(labels))
+    return uvw, triangles, colors, normals
 
 
-def _studio(renderer, prop):
-    prop.SetInterpolationToPhong()
-    prop.SetAmbient(0.37)
-    prop.SetDiffuse(0.69)
-    prop.SetSpecular(0.16)
-    prop.SetSpecularPower(11.0)
+def _studio_lights(renderer):
     # Neutral, broad key/fill and a grazing light. No ground plane, black
     # outlines or material guesses based on a label or a group's identity.
     for direction, intensity in (
@@ -245,26 +269,59 @@ def _window():
     return window
 
 
-def _capture(scene, width, height, background, *, ids, fxaa=False):
+def _actor(surface, opacity, *, ids):
     mapper = vtkPolyDataMapper()
-    mapper.SetInputData(scene.surface)
+    mapper.SetInputData(surface)
     mapper.SetScalarModeToUsePointData()
     mapper.SetColorModeToDirectScalars()
     mapper.InterpolateScalarsBeforeMappingOff()
     actor = vtkActor()
     actor.SetMapper(mapper)
-    renderer = vtkRenderer()
-    renderer.AutomaticLightCreationOff()
-    renderer.SetBackground(*(c / 255.0 for c in background))
-    renderer.SetUseFXAA(fxaa)
-    renderer.AddActor(actor)
     prop = actor.GetProperty()
     prop.EdgeVisibilityOff()
     if ids:
         prop.LightingOff()
         prop.SetInterpolationToFlat()
     else:
-        _studio(renderer, prop)
+        prop.SetInterpolationToPhong()
+        prop.SetAmbient(0.37)
+        prop.SetDiffuse(0.69)
+        prop.SetSpecular(0.16)
+        prop.SetSpecularPower(11.0)
+        if opacity < 1.0:
+            prop.SetOpacity(opacity)
+            # Closed thin glazing: apply the sheet tint once, not again at the exit face.
+            prop.BackfaceCullingOn()
+    return actor
+
+
+def _optical_pass(fxaa):
+    # Use classic per-pixel peeling after the opaque pass. The bundled Cocoa
+    # backend's automatic dual-peeling path can blend in actor insertion order.
+    steps = vtkRenderStepsPass()
+    peel = vtkDepthPeelingPass()
+    peel.SetTranslucentPass(steps.GetTranslucentPass())
+    peel.SetMaximumNumberOfPeels(0)  # until no translucent fragments remain
+    peel.SetOcclusionRatio(0.0)
+    steps.SetTranslucentPass(peel)
+    if fxaa:
+        aa = vtkOpenGLFXAAPass()
+        aa.SetDelegatePass(steps)
+        return aa
+    return steps
+
+
+def _capture(scene, width, height, background, *, ids, fxaa=False):
+    renderer = vtkRenderer()
+    renderer.AutomaticLightCreationOff()
+    renderer.SetBackground(*(c / 255.0 for c in background))
+    renderer.SetUseFXAA(fxaa)
+    for opacity, surface in scene.layers:
+        renderer.AddActor(_actor(surface, opacity, ids=ids))
+    if not ids:
+        _studio_lights(renderer)
+    if any(opacity < 1.0 for opacity, _ in scene.layers):
+        renderer.SetPass(_optical_pass(fxaa))
 
     camera = renderer.GetActiveCamera()
     camera.ParallelProjectionOn()
@@ -305,8 +362,10 @@ def render(
 ) -> Render:
     """Fit to the requested aspect, adding ``padding`` per side on the limiting axis.
 
-    Offsets translate roots in global mm for this call only. Empty/all-wire
-    scenes have no projectable surface extent and raise ValueError.
+    ``item.obj.OpticalTransparency`` is the percentage of backing color seen
+    through a sheet (0..100). Other leaves are opaque; even clear leaves retain
+    their fitted bounds. Offsets translate native leaf names (or legacy roots) in
+    global mm. Empty/all-wire scenes have no surface extent and raise ValueError.
     """
     width, height = _size(width, height)
     background = _rgb(bgcolor)
@@ -323,9 +382,9 @@ def render(
     return Render(image, scene.extent)
 
 
-def _id_view(items, frame, width, offsets, key):
+def _id_view(items, frame, width, offsets, key, *, opaque_only=False):
     width, height = _size(width, width)
-    scene = _scene(items, frame, width, height, 0.06, offsets, id_key=key)
+    scene = _scene(items, frame, width, height, 0.06, offsets, id_key=key, opaque_only=opaque_only)
     if scene is None:
         return None
     pixels = _capture(scene, width, height, (0, 0, 0), ids=True)
@@ -338,12 +397,13 @@ def _id_view(items, frame, width, offsets, key):
 
 
 def visible_names(items, frame, width=950) -> set[str]:
-    """Names owning >=1 opaque depth-tested pixel in a square width-by-width view.
+    """Opaque leaves owning >=1 depth-tested pixel in a square width-by-width view.
 
-    This is a sampled visibility test, not analytic HLR: raise width for tiny
-    or grazing features. Exactly coincident faces have no unique depth winner.
+    Optical sheets are not opaque HLR blockers. They still contribute to the fit.
+    This is sampled, not analytic HLR: raise width for tiny or grazing features.
+    Exactly coincident faces have no unique depth winner.
     """
-    view = _id_view(items, frame, width, None, 'name')
+    view = _id_view(items, frame, width, None, 'name', opaque_only=True)
     if view is None:
         return set()
     codes, names, _ = view
@@ -355,8 +415,9 @@ def root_anchors(
 ) -> dict[str, tuple[float, float]]:
     """A visible pixel center (u,v) in world mm per root, or per internal name.
 
-    Uses the deepest interior of each visible mask, not the center of a 3-D
-    box (which could lie in a hole or under another part). Hidden keys omitted.
+    Uses the deepest interior of each first-hit mask, not the center of a 3-D
+    box (which could lie in a hole or under another part). This picks the physical
+    surface of optical sheets, not an opaque obstruction. Hidden keys omitted.
     Use the same leaves, frame and offsets as the target render; its aspect
     ratio can differ. ``name_mode=True`` keeps leaves of a root separate.
     """

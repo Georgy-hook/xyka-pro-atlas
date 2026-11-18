@@ -7,11 +7,15 @@ from pathlib import Path
 import FreeCAD as App
 import numpy as np
 
-# The same translation vectors as the native Exploded links, not assembly travel.
+# ROOTS remains the context's public module ordering for existing atlas clients;
+# an opened file's authoritative list is scene.roots, not the installed context.
 from context import EXPLODE, GROUPS
 
 ROOTS = tuple(v[0] for v in GROUPS.values())
-OFFSETS = {GROUPS[k][0]: np.array(v, dtype=float) for k, v in EXPLODE.items()}
+OFFSETS = {GROUPS[k][0]: np.array(v, dtype=float) for k, v in EXPLODE.items() if k in GROUPS}
+FUNCTIONS = ('Housing', 'LowerBody', 'Fascia', 'LightRing', 'Battery', 'Pod', 'Heater',
+             'MainPCB', 'DisplayPCB', 'Harness', 'Mounts')
+UNITS = ('UpperUnit', 'LowerUnit')
 
 
 def unit(a):
@@ -55,6 +59,11 @@ class Item:
     def color(self):
         return self.obj.ColorHex
 
+    @property
+    def unit(self):
+        """Actual enclosing physical unit. Empty only for a legacy flat assembly."""
+        return next((name for name in self.chain if name in UNITS), '')
+
     @cached_property
     def box(self):
         b = self.shape.optimalBoundingBox(False, False)
@@ -84,15 +93,23 @@ class Scene:
         self.doc = App.openDocument(str(self.src))
         self.parts = {}
         self.by = {}
-        for name in ROOTS:
-            part = self.doc.getObject(name)
-            if part is None:
-                raise ValueError(f'Physical root missing from FCStd: {name}')
-            self.parts[name] = part
-            self.by[name] = list(self._walk(part, name, ()))
-            if not self.by[name]:
-                raise ValueError(f'No registered physical leaves: {name}')
-        self.items = [i for root in ROOTS for i in self.by[root]]
+        assembly = self.doc.getObject('Assembly')
+        if assembly is None:
+            raise ValueError('Missing assembled state: Assembly')
+        self.units = {n.Name: n for n in assembly.Group if n.Name in UNITS}
+        self.structured = bool(self.units)
+        if self.structured and set(self.units) != set(UNITS):
+            raise ValueError('Both physical unit containers must be children of Assembly')
+        self.items = list(self._walk(assembly, '', ()))
+        self.roots = tuple(name for name in FUNCTIONS if name in self.parts)
+        if self.structured and set(self.roots) != set(FUNCTIONS):
+            raise ValueError(f'Missing functional modules: {sorted(set(FUNCTIONS) - set(self.roots))}')
+        self.by = {name: [i for i in self.items if i.root == name] for name in self.roots}
+        self.by_unit = {name: [i for i in self.items if i.unit == name] for name in self.units}
+        if not self.items or any(not group for group in self.by.values()):
+            raise ValueError('Physical assembly or functional module is empty')
+        if self.structured and any(not i.unit for i in self.items):
+            raise ValueError('Retail physical leaf is not assigned to a unit')
         self.named = {i.name: i for i in self.items}
         if len(self.named) != len(self.items):
             raise ValueError('Repeated registered physical features in source hierarchy')
@@ -101,10 +118,17 @@ class Scene:
         if obj.TypeId == 'App::Link':
             return
         if 'ColorHex' in obj.PropertiesList and hasattr(obj, 'Shape'):
+            if not root:
+                raise ValueError(f'Physical feature outside a functional module: {obj.Name}')
             if obj.Shape.isNull():
                 raise ValueError(f'Empty registered shape: {obj.Name}')
             yield Item(obj, global_shape(obj), root, chain)
         elif obj.isDerivedFrom('App::Part'):
+            if obj.Name in FUNCTIONS:
+                if root:
+                    raise ValueError(f'Functional modules must not overlap: {root} / {obj.Name}')
+                root = obj.Name
+                self.parts[root] = obj
             for child in obj.Group:
                 yield from self._walk(child, root, (*chain, obj.Name))
 
@@ -113,7 +137,9 @@ class Scene:
 
     @cached_property
     def offsets(self):
-        """Read the actual native, translation-only exploded links when present."""
+        """Coarse module vectors for legacy consumers; never a retail leaf transform."""
+        if self.structured:
+            return {k: np.array(OFFSETS.get(k, np.zeros(3))) for k in self.roots}
         group = self.doc.getObject('Exploded')
         if group is None:
             return OFFSETS  # Standalone development fixtures need not have native links.
@@ -124,9 +150,30 @@ class Scene:
             if abs(link.LinkPlacement.Rotation.Angle) > 1e-7:
                 raise ValueError('Exploded views expect published translation-only links')
             offsets[link.LinkedObject.Name] = np.array(link.LinkPlacement.Base, dtype=float)
-        if set(offsets) != set(ROOTS):
-            raise ValueError('Native exploded presentation does not cover all seven physical roots')
+        if set(offsets) != set(self.roots):
+            raise ValueError('Native exploded presentation does not cover all physical modules')
         return offsets
+
+    @cached_property
+    def leaf_offsets(self):
+        """Native total translations in global CAD mm, by unique physical leaf name.
+
+        A film's additional service motion and its cassette motion are already
+        summed in the FCStd. Never apply the module offset a second time.
+        """
+        result = {}
+        for item in self.items:
+            obj = item.obj
+            if 'ServiceExplodeMM' in obj.PropertiesList:
+                delta = np.asarray(tuple(obj.ServiceExplodeMM), dtype=float)
+            elif self.structured:
+                raise ValueError(f'{item.name}: missing native ServiceExplodeMM')
+            else:
+                delta = np.asarray(self.offsets[item.root], dtype=float)
+            if delta.shape != (3,) or not np.isfinite(delta).all():
+                raise ValueError(f'{item.name}: invalid service translation')
+            result[item.name] = delta
+        return result
 
     def board_frame(self, root):
         """World-space rows u (across), v (along), w (towards populated face)."""
