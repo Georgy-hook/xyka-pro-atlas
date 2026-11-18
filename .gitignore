@@ -1,16 +1,35 @@
-# Local runtime files and automatic FreeCAD backup copies
+# Workstation files, tool caches and local credentials.
+.DS_Store
 __pycache__/
 *.py[cod]
-.DS_Store
-*.FCStd1
+.venv/
+node_modules/
+.env
+.env.*
+!.env.example
+
+# Private reconstruction inputs and local build/release staging.
+/photos/original/
+/XKAH_PRO_CAD_REBUILD_HANDOFF/
+/*XKAH_PRO_CAD_REBUILD_HANDOFF.zip
+/private-inputs/
+/scratch/
+/out/
+/dist/
+/xkah-output-*/
+
+# FreeCAD backups (keep native source files outside the generated issue below).
+*.FCStd[0-9]*
 *.FCBak
 *.FCStd.bak
-/xkah-output-*/
 
 # KiCad local display preferences, locks and editor backups, not board sources.
 /pcb/**/*.kicad_prl
 /pcb/**/*.lck
 /pcb/**/*-backups/
+/pcb/**/_autosave-*
+/pcb/**/*.kicad_pcb-bak
+/pcb/**/fp-info-cache
 /pcb/main/copper_front.svg
 /pcb/main/copper_back_through_only.svg
 
@@ -20,6 +39,7 @@ __pycache__/
 /XKAH_PRO_A43_*.pdf
 /XKAH_PRO_A43_*.png
 /XKAH_PRO_A43_*.zip
+/XYKA_PRO_A43_Studio.zip
 /drawings/
 /MODEL_MANIFEST.csv
 /DIMENSIONS.csv

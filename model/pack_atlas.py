@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import struct
+import subprocess
 import tempfile
 import zipfile
 
@@ -123,6 +124,35 @@ def check(root):
     return sha
 
 
+def public_files(root):
+    """Use reviewed Git paths plus named release products, never a working-directory sweep."""
+    git = ['git', '-C', str(root)]
+    top = subprocess.check_output([*git, 'rev-parse', '--show-toplevel'], text=True).strip()
+    if Path(top).resolve() != root:
+        raise ValueError('The public release must be built from the root of the project checkout')
+    sources = ('README.md', 'LICENSE', 'MEASUREMENT_GAPS.md', 'XKAH_Finish.FCMacro',
+               'build_model.py', 'model', 'pcb', 'atlas', 'docs')
+    names = subprocess.check_output([*git, 'ls-tree', '-r', '-z', '--name-only', 'HEAD', '--', *sources])
+    files = {root / os.fsdecode(name) for name in names.split(b'\0') if name}
+    files.update(root / name for name in (
+        'atlas/data/atlas.glb', 'atlas/data/scene.js', 'atlas/vendor/three-atlas.js', 'atlas/evidence.js',
+        'ATLAS_ACCEPTANCE.json', 'VERIFICATION.json', 'MODEL_MANIFEST.csv', 'DIMENSIONS.csv',
+        'FIT_CHECK.csv', 'WIRE_REGISTER.csv', 'XKAH_PRO_A43_rebuilt.FCStd', 'XKAH_PRO_A43_drawings.pdf',
+        'XKAH_PRO_A43_rebuilt.step', 'XKAH_PRO_A43_electronics.step', 'XKAH_PRO_A43_outer_housing.step',
+        'XKAH_PRO_A43_assembly_assembled.png', 'XKAH_PRO_A43_assembly_exploded.png', 'XKAH_PRO_A43_electronics.png',
+        'pcb/main/copper_front.svg', 'pcb/main/copper_back_through_only.svg', 'drawings/index.json',
+        'drawings/pcb/pcb-sheets.json',
+    ))
+    # check_drawings has already verified these exact sheet paths and their digests.
+    index = json.loads((root / 'drawings/index.json').read_text(encoding='utf-8'))
+    for sheet in index['sheets']:
+        files.add(root / sheet['svg'])
+        if sheet['geometrySource'] == 'KiCad':
+            for extension in ('pdf', 'svg'):
+                files.add(root / 'drawings/pcb' / f"{sheet['id']}.{extension}")
+    return files
+
+
 def entries(root):
     paths = {root/n for n in (*REQUIRED, 'XKAH_Finish.FCMacro', 'ATLAS_ACCEPTANCE.json', 'LICENSE',
                              'atlas/index.html', 'atlas/viewport.js', 'atlas/vendor/three-atlas.js',
@@ -134,15 +164,15 @@ def entries(root):
             private = any(x.startswith('.') or x in {'__pycache__', 'node_modules'} for x in item.relative_to(root).parts)
             if not private and item.is_file() and (item.suffix in EXTENSIONS or item.name in {'LICENSE', 'fp-lib-table'}):
                 paths.add(item)
-    for item in paths:
-        if not item.is_file() or item.is_symlink() or not item.stat().st_size:
-            raise ValueError(f'Missing or unsafe release entry: {item}')
-    return sorted(paths)
+    return paths
 
 
-def package(root, out):
+def package(root, out, public=False):
     sha = check(root)
-    paths = entries(root)
+    paths = sorted(public_files(root) if public else entries(root))
+    for item in paths:
+        if item.resolve() != item or not item.is_relative_to(root) or not item.is_file() or not item.stat().st_size:
+            raise ValueError(f'Missing or unsafe release entry: {item}')
     with tempfile.TemporaryDirectory(prefix='xkah-atlas-', dir=out.parent) as tmp:
         archive = Path(tmp)/out.name
         hashes = []
@@ -167,6 +197,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, default=ROOT)
     parser.add_argument('--output', type=Path)
+    parser.add_argument('--public', action='store_true',
+                        help='Build the GitHub edition without private photo overlays or workspace captures')
     args = parser.parse_args()
     base = args.root.resolve()
-    package(base, (args.output or base/'XKAH_PRO_A43_browser_atlas.zip').resolve())
+    default = 'XYKA_PRO_A43_Studio.zip' if args.public else 'XKAH_PRO_A43_browser_atlas.zip'
+    package(base, (args.output or base / default).resolve(), public=args.public)
