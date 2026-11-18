@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="ru" data-ui-ready="false" data-viewport-state="loading">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>XKAH PRO · Атлас разборки</title>
+  <link rel="icon" href="icons/stack-2.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="vendor/nouislider/nouislider.min.css">
+  <link rel="stylesheet" href="atlas.css">
+  <link rel="stylesheet" href="workspace.css">
+  <link rel="stylesheet" href="register.css">
+  <link rel="stylesheet" href="evidence-ui.css">
+  <script defer src="data/scene.js"></script>
+  <script defer src="evidence.js"></script>
+  <script defer src="vendor/three-atlas.js"></script>
+  <script defer src="viewport.js"></script>
+  <script defer src="vendor/nouislider/nouislider.min.js"></script>
+  <script defer src="app-register.js"></script>
+  <script defer src="app-drawing.js"></script>
+  <script defer src="app-evidence.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#sheets">Перейти к содержанию листа</a>
+  <div class="folio">
+    <header class="masthead">
+      <div class="mast-title">
+        <div class="imprint"><img src="icons/stack-2.svg" alt="" width="21" height="21"> Атлас разборки</div>
+        <h1>XKAH PRO</h1>
+      </div>
+      <div class="mast-index">
+        <p class="revision"><span>Реконструкция по фото</span><b>A4.3</b></p>
+        <nav aria-label="Листы атласа">
+          <div id="sheets-nav" role="tablist" aria-label="Листы атласа" class="sheets-nav">
+            <button id="tab-assembly" role="tab" aria-controls="assembly" aria-selected="true" data-page="assembly"><small>01</small> Сборка</button>
+            <button id="tab-research" role="tab" aria-controls="research" aria-selected="false" tabindex="-1" data-page="research"><small>02</small> Фотоисследование</button>
+            <button id="tab-specs" role="tab" aria-controls="specs" aria-selected="false" tabindex="-1" data-page="specs"><small>03</small> Размеры и материалы</button>
+          </div>
+        </nav>
+      </div>
+    </header>
+
+    <main id="sheets" tabindex="-1">
+      <section id="assembly" role="tabpanel" aria-labelledby="tab-assembly">
+        <div id="group-tabs" class="group-tabs" role="tablist" aria-label="Узлы модели"></div>
+        <div id="node-sheet" role="tabpanel" class="workspace">
+          <figure id="drawing" class="drawing" aria-labelledby="drawing-title">
+            <header class="sheet-heading">
+              <div class="sheet-title">
+                <span class="plate-number" id="figure-number">Фиг. 00</span>
+                <h2 id="drawing-title">Общий вид</h2>
+              </div>
+              <button class="text-action reset" type="button" data-action="reset" title="Вся сборка: изометрия, без разноса, исходная отделка и без фильтров">
+                <img src="icons/rotate-clockwise.svg" alt="" width="18" height="18">Сбросить
+              </button>
+            </header>
+            <div class="drawing-field" id="drawing-field">
+              <canvas id="atlas-canvas" role="img" aria-label="Интерактивная модель XKAH PRO. Детали также доступны в ведомости."></canvas>
+              <div id="print-fallback" class="print-fallback" hidden>
+                <img id="print-image" alt="Статичный вид собранной модели XKAH PRO со стороны экрана">
+                <p id="print-note">3D недоступен. Показан общий вид из CAD; ведомость остаётся доступной.</p>
+              </div>
+              <div id="loading-note" class="loading-note" role="status">Открытие 3D-модели…</div>
+              <i class="reg-mark reg-tl" aria-hidden="true"></i><i class="reg-mark reg-tr" aria-hidden="true"></i>
+              <i class="reg-mark reg-bl" aria-hidden="true"></i><i class="reg-mark reg-br" aria-hidden="true"></i>
+              <div class="field-tools">
+                <button type="button" class="field-action" data-action="leave-isolation" hidden>
+                  <img src="icons/arrow-left.svg" alt="" width="16" height="16">К общему виду
+                </button>
+                <button type="button" class="field-action" data-action="fit" aria-label="Вписать вид в поле" title="Вписать вид в поле" disabled>
+                  <img src="icons/zoom-scan.svg" alt="" width="20" height="20">
+                </button>
+              </div>
+              <a href="#part-focus" id="picked-caption" class="picked-caption" hidden><span>Выбрано</span> <strong id="picked-id"></strong></a>
+            </div>
+            <div class="projection-bar">
+              <div class="view-switch" role="group" aria-label="Проекция модели">
+                <button type="button" data-view="iso" aria-pressed="true" title="Изометрия" disabled><img src="icons/cube.svg" alt="" width="16" height="16">Изо</button>
+                <button type="button" data-view="front" aria-pressed="false" disabled>Спереди</button>
+                <button type="button" data-view="back" aria-pressed="false" disabled>Сзади</button>
+                <button type="button" data-view="top" aria-pressed="false" disabled>Сверху</button>
+              </div>
+              <span class="gesture-hint" id="gesture-hint"><span class="mouse-hint">Тянуть — поворот · Колесо — масштаб</span><span class="touch-hint">Один палец — поворот · Щипок — масштаб</span></span>
+              <a class="mobile-register-link" href="#register" id="to-register"><span>К ведомости</span><img src="icons/chevron-right.svg" width="13" height="13" alt=""></a>
+            </div>
+            <figcaption class="control-strip">
+              <div class="explosion-control">
+                <div class="control-label"><span id="explode-label">Разнос узлов</span><output id="explode-value" for="explode-native">0 %</output></div>
+                <div class="slider-track" id="explode-slider" hidden></div>
+                <input id="explode-native" type="range" min="0" max="100" value="0" step="1" aria-labelledby="explode-label" disabled>
+              </div>
+              <div class="finish-control">
+                <div class="control-label"><span id="finish-label">Расцветка корпуса</span><output id="finish-name">—</output></div>
+                <div id="finishes" class="finishes" role="group" aria-labelledby="finish-label"></div>
+              </div>
+            </figcaption>
+          </figure>
+
+          <aside class="reg-column" id="register" aria-label="Ведомость и паспорт детали">
+            <section class="reg-pane" id="register-pane" aria-labelledby="register-title">
+              <header class="reg-heading"><h2 id="register-title">Ведомость деталей</h2><span class="count" id="group-count" title="Элементов CAD в узле">—</span></header>
+              <div class="register-filters">
+                <label class="searchbox" for="part-search">
+                  <img src="icons/search.svg" alt="" width="19" height="19">
+                  <span class="sr-only">Найти по названию, CAD ID или подразделу</span>
+                  <input type="search" id="part-search" placeholder="Найти деталь или CAD ID" autocomplete="off" spellcheck="false" enterkeyhint="search">
+                  <kbd aria-hidden="true">/</kbd>
+                </label>
+                <div class="sub-filter"><label for="subsection">Подраздел</label><select id="subsection"><option value="">Все подразделы</option></select></div>
+              </div>
+              <div class="register-key"><span>Поз. / Наименование</span><span id="result-count" role="status"></span></div>
+              <div class="parts-scroll" id="part-list" aria-label="Результаты поиска деталей" role="region"></div>
+            </section>
+            <section class="reg-pane" id="passport" aria-labelledby="part-focus" hidden>
+              <div class="passport-nav"><button type="button" class="text-action" data-action="catalog"><img src="icons/arrow-left.svg" width="16" height="16" alt="">К ведомости</button><span class="plate-number" id="passport-number"></span></div>
+              <div class="passport-scroll">
+                <p class="section-kicker">Паспорт детали</p>
+                <h2 id="part-focus" tabindex="-1"></h2>
+                <p class="part-identifier"><span>CAD ID</span><code id="part-id"></code></p>
+                <button class="isolate-action" type="button" data-action="isolate" disabled><img src="icons/focus-2.svg" width="18" height="18" alt=""><span>Осмотреть отдельно</span></button>
+                <div id="passport-body"></div>
+              </div>
+            </section>
+          </aside>
+        </div>
+      </section>
+      <section id="research" role="tabpanel" aria-labelledby="tab-research" tabindex="0" hidden><div id="research-body"></div></section>
+      <section id="specs" role="tabpanel" aria-labelledby="tab-specs" tabindex="0" hidden><div id="spec-body"></div></section>
+      <noscript><p>Для интерактивной разборки откройте этот файл в браузере с JavaScript. Исходный CAD и чертежи доступны по ссылкам ниже.</p></noscript>
+    </main>
+
+    <footer class="colophon">
+      <p><b>Основание: CAD</b><span class="edition-note">Оценочная реконструкция, не заводская КД.</span></p>
+      <nav aria-label="Файлы проекта"><a href="../XKAH_PRO_A43_rebuilt.FCStd" download>FreeCAD <span>FCStd</span></a><a href="data/atlas.glb" download>Модель <span>GLB</span></a><a href="../XKAH_PRO_A43_drawings.pdf" target="_blank" rel="noopener">Чертежи <span>PDF</span></a></nav>
+    </footer>
+  </div>
+  <div id="announcer" role="status" class="sr-only"></div>
+</body>
+</html>

@@ -1,0 +1,411 @@
+.drawing {
+  min-width: 0;
+}
+
+.sheet-heading, .reg-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 50px;
+  padding: 0 0 10px;
+}
+
+.sheet-title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 3px 12px;
+}
+
+.plate-number, .section-kicker {
+  color: var(--accent);
+}
+
+.sheet-heading h2, .reg-heading h2, #part-focus {
+  font: 500 clamp(24px, 2vw, 37px)/1.06 var(--serif);
+  letter-spacing: -.038em;
+}
+
+.reset {
+  flex: none;
+}
+
+.drawing-field {
+  position: relative;
+  height: clamp(340px, calc(100svh - 376px), 800px);
+  overflow: hidden;
+  isolation: isolate;
+  border: 1px solid var(--rule);
+  background: var(--field) url('icons/drafting-paper.svg') center;
+}
+
+#atlas-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  outline-offset: -4px;
+}
+
+#atlas-canvas.is-interactive {
+  cursor: grab;
+}
+
+#atlas-canvas.is-interactive:active {
+  cursor: grabbing;
+}
+
+.reg-mark {
+  --reach: 7px;
+  position: absolute;
+  width: calc(2 * var(--reach) + 1px);
+  height: calc(2 * var(--reach) + 1px);
+  pointer-events: none;
+  color: var(--rule);
+}
+
+.reg-mark::before, .reg-mark::after {
+  content: '';
+  position: absolute;
+  background: currentColor;
+}
+
+.reg-mark::before {
+  top: var(--reach);
+  width: 100%;
+  height: 1px;
+}
+
+.reg-mark::after {
+  left: var(--reach);
+  width: 1px;
+  height: 100%;
+}
+
+.reg-tl { inset: 10px auto auto 10px; }
+.reg-tr { inset: 10px 10px auto auto; }
+.reg-bl { inset: auto auto 10px 10px; }
+.reg-br { inset: auto 10px 10px auto; }
+
+.field-tools {
+  position: absolute;
+  top: 12px;
+  right: 35px;
+  display: flex;
+  gap: 4px;
+}
+
+.field-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 33px;
+  padding: 4px 8px;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.field-action:not(:disabled):hover {
+  border-color: var(--ink);
+  background: white;
+}
+
+.picked-caption {
+  position: absolute;
+  left: 34px;
+  bottom: 12px;
+  max-width: calc(100% - 68px);
+  padding: 5px 9px;
+  border-left: 3px solid var(--accent);
+  background: var(--paper);
+  color: var(--ink);
+  text-decoration: none;
+  font: 11px/1.4 var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.picked-caption span {
+  color: var(--muted);
+}
+
+.loading-note, .print-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+
+.print-fallback {
+  flex-direction: column;
+  padding: 28px 26px 32px;
+  gap: 10px;
+  text-align: center;
+}
+
+.print-fallback img {
+  display: block;
+  min-height: 0;
+  max-width: 75%;
+  max-height: calc(100% - 32px);
+  object-fit: contain;
+}
+
+.print-fallback p {
+  max-width: 46ch;
+  padding: 2px 5px;
+  background: var(--field);
+  font-size: 12px;
+}
+
+.projection-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 3px 10px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.view-switch {
+  display: flex;
+  gap: 2px;
+}
+
+.view-switch button {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+.view-switch [aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.view-switch [aria-pressed='true'] img {
+  filter: invert(1);
+}
+
+.view-switch button:not(:disabled):not([aria-pressed='true']):hover {
+  background: var(--wash);
+}
+
+.gesture-hint {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.mobile-register-link {
+  display: none;
+}
+
+.touch-hint {
+  display: none;
+}
+
+.control-strip {
+  display: grid;
+  grid-template-columns: 1.05fr 1fr;
+  gap: 24px;
+  padding: 14px 0 4px;
+}
+
+.explosion-control, .finish-control {
+  min-width: 0;
+}
+
+.finish-control {
+  padding-left: 22px;
+  border-left: 1px solid var(--line);
+}
+
+.control-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.control-label output {
+  color: var(--muted);
+  font: 12px/1.25 var(--sans);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+#explode-native {
+  width: 100%;
+  height: 25px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.slider-track.noUi-horizontal {
+  height: 3px;
+  margin: 16px 9px;
+  background: var(--line);
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.slider-track .noUi-connect {
+  background: var(--accent);
+}
+
+.noUi-horizontal.slider-track .noUi-handle {
+  top: -8px;
+  right: -8px;
+  width: 17px;
+  height: 19px;
+  border: 2px solid var(--ink);
+  border-radius: 0;
+  background: var(--paper);
+  box-shadow: none;
+  cursor: ew-resize;
+}
+
+.slider-track .noUi-handle::before, .slider-track .noUi-handle::after {
+  display: none;
+}
+
+.slider-track .noUi-touch-area {
+  position: absolute;
+  inset: -6px;
+  width: auto;
+  height: auto;
+}
+
+.slider-track[disabled] {
+  opacity: .48;
+}
+
+.finishes {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  min-height: 30px;
+}
+
+.finish-swatch {
+  width: clamp(34px, 3.2vw, 53px);
+  height: 30px;
+  padding: 4px;
+  border: 1px solid transparent;
+}
+
+.finish-swatch::before {
+  content: '';
+  display: block;
+  height: 100%;
+  background: var(--swatch);
+  border: 1px solid rgb(37 39 34 / 35%);
+}
+
+.finish-swatch[aria-pressed='true'], .finish-swatch:not(:disabled):hover {
+  border-color: var(--ink);
+}
+
+.no-finishes {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* A static CAD plate is not an interactive projection or exploded view. */
+html[data-viewport-state='fallback'] .field-tools,
+html[data-viewport-state='fallback'] .view-switch,
+html[data-viewport-state='fallback'] .control-strip {
+  display: none;
+}
+
+html[data-viewport-state='fallback'] .projection-bar {
+  justify-content: flex-end;
+  border: 0;
+  padding: 0;
+}
+
+@media (pointer: coarse) {
+  .mouse-hint { display: none; }
+  .touch-hint { display: inline; }
+  .field-action, .view-switch button { min-height: 40px; }
+  .finish-swatch { min-height: 38px; }
+}
+
+@media (max-width: 1050px) and (min-width: 781px) {
+  .gesture-hint { display: none; }
+  .control-strip { gap: 16px; }
+  .finish-control { padding-left: 16px; }
+}
+
+@media (max-width: 780px) {
+  .drawing-field {
+    height: clamp(270px, 50svh, 560px);
+  }
+  .mobile-register-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    min-height: 38px;
+    font-size: 12px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .mobile-register-link img {
+    transform: rotate(90deg);
+  }
+  .gesture-hint {
+    display: none;
+  }
+}
+
+@media (max-width: 550px) {
+  .sheet-heading, .reg-heading {
+    min-height: 40px;
+    padding-bottom: 6px;
+  }
+  .sheet-heading h2, .reg-heading h2 {
+    font-size: 25px;
+  }
+  .sheet-title { gap: 2px 8px; }
+  .reg-mark { --reach: 5px; }
+  .field-tools { right: 28px; }
+  .gesture-hint { display: none; }
+  .control-strip {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+    padding: 4px 0 0;
+  }
+  .explosion-control, .finish-control {
+    display: grid;
+    grid-template-columns: 125px minmax(0, 1fr);
+    align-items: center;
+    min-height: 36px;
+    padding: 0;
+    border: 0;
+  }
+  .control-label {
+    display: block;
+    margin-bottom: 0;
+    font-size: 10px;
+  }
+  .control-label output {
+    display: block;
+  }
+  .finishes { gap: 0; }
+  .finish-swatch {
+    width: clamp(31px, 9vw, 42px);
+    padding: 4px 3px;
+  }
+}

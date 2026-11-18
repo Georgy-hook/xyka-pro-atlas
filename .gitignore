@@ -19,3 +19,8 @@ __pycache__/
 /WIRE_REGISTER.csv
 /FIT_CHECK.csv
 /VERIFICATION.json
+/atlas/data/
+/atlas/evidence.js
+/atlas/preview*.png
+/ATLAS_ACCEPTANCE.json
+/atlas/vendor/three-atlas.js
