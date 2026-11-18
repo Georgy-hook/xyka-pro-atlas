@@ -7,6 +7,13 @@ __pycache__/
 *.FCStd.bak
 /xkah-output-*/
 
+# KiCad local display preferences, locks and editor backups, not board sources.
+/pcb/**/*.kicad_prl
+/pcb/**/*.lck
+/pcb/**/*-backups/
+/pcb/main/copper_front.svg
+/pcb/main/copper_back_through_only.svg
+
 # Reproducible publication. Files stay in the working folder for immediate use.
 /XKAH_PRO_A43_*.FCStd
 /XKAH_PRO_A43_*.step

@@ -1,0 +1,8 @@
+(footprint "SolderWitness_1" (version 20240108) (generator "photo_reconstruction")
+  (layer "F.Cu")
+  (descr "IMG_8917/18. Raised solder; only footprint estimated.")
+  (property "Reference" "REF**" (at 0 -2.8 0) (layer "F.Fab") (hide yes) (uuid 7c430828-e928-5e52-88f8-07420f224f7d) (effects (font (size 0.7 0.7) (thickness 0.1))))
+  (property "Value" "SolderWitness_1" (at 0 2.8 0) (layer "F.Fab") (hide yes) (uuid 04f2686e-bd3d-5b1c-8685-de77b1341189) (effects (font (size 0.7 0.7) (thickness 0.1))))
+  (attr board_only exclude_from_pos_files exclude_from_bom)
+  (pad "1" smd circle (at 0 0) (size 1.16 1.16) (layers "F.Cu" "F.Mask") (uuid 19d10072-7faa-57ea-86aa-501754d8fdf3))
+)

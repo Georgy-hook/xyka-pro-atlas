@@ -1,0 +1,26 @@
+{
+  "board": "20260305A",
+  "origin": {"u0_v0_in_kicad_mm": [100.0,100.0], "formula": "X=100+u; Y=100-v; front unmirrored; explicitly mirror the back plot for a view from outside the reverse face"},
+  "scale": "ISSUED_CAD_NOMINAL: PCB W=28.2 ±3.5 mm, L=50.4 ±6 mm, T=0.80 ±0.25 mm. Reference: estimated ~3 x 4 mm switch case family, not a measured part number.",
+  "src": {"primary": "IMG_8918.jpg", "check": "IMG_8917.jpg", "pixel_origin": "Unrotated 1152 x 2048 originals, x right, y down", "registration": "../../model/display_registration.json"},
+  "paths": [
+    {"id": "R01", "layer": "F.Cu", "width_mm": 0.22, "width_uncertainty_mm": 0.06,
+     "uv_mm": [[3.23,9.44],[3.23,7.87],[3.62,7.48],[5.52,7.48],[5.92,7.08],[5.92,5.85],[5.63,5.56],[2.06,5.56]],
+     "cross_section_uv": [[4.5,7.40],[4.5,7.62]],
+     "basis": "Registered mask relief, distinct entry and parallel edges around return bend at right of centre switch. Strong on 8918, same two bends and straight upper run in 8917. Apparent transverse width from 8918 intensity scan; NOT etched-width metrology. Stop short of FPC foot and switch shadow; no terminal assigned."},
+    {"id": "R02", "layer": "F.Cu", "width_mm": 0.14, "width_uncertainty_mm": 0.06,
+     "uv_mm": [[-2.23,9.63],[-2.23,7.57],[-1.35,6.69]],
+     "cross_section_uv": [[-2.32,8.60],[-2.17,8.60]],
+     "basis": "Separately resolved masked run between perforated field and mid switch in 8918. Visible straight then diagonal before case occlusion. 8917 raised housing hides the diagonal: not a verified termination or independently observed pin pair."},
+    {"id": "R03", "layer": "F.Cu", "width_mm": 0.15, "width_uncertainty_mm": 0.06,
+     "uv_mm": [[-1.59,9.40],[-1.59,7.78],[-1.25,7.44]],
+     "cross_section_uv": [[-1.68,8.60],[-1.53,8.60]],
+     "basis": "The adjacent masked run with separate bend at centre switch, 8918; ends clipped at the last resolved straight below FPC toe and at package edge. Not continued into a pad."}
+  ],
+  "documentary_paths": [
+    {"id": "D01", "layer": "User.2", "uv_mm": [[-8.51,10.85],[-8.51,13.07],[-8.15,13.43],[-8.15,14.91]], "basis": "One of three conspicuous line features in dim_deui.jpg at left of film; adjacent area partly covered with residue in owner macros. Comparative specimen: NOT promoted to conductive artwork of the owner board."},
+    {"id": "D02", "layer": "User.2", "uv_mm": [[-8.04,10.85],[-8.04,12.99],[-7.75,13.28],[-7.75,14.78]], "basis": "Second line feature on same comparison image. Might be ink, mask relief or conductor; endpoints hidden."},
+    {"id": "D03", "layer": "User.2", "uv_mm": [[-7.52,10.85],[-7.52,13.12]], "basis": "Third shorter feature on comparison specimen. Not a proved PCB net."}
+  ],
+  "statuses": {"F.Cu": "Native component lands, observed exposed metal and clipped photo traces only, no net IDs", "B.Cu": "NOT OBSERVED; no artwork transferred", "inner_layers": "UNKNOWN count, copper, continuity", "LCD_obscured": "NO Cu under the screen extrapolated", "flex": "15 PCB solder lands. Polyimide-tail conductor patterns and visible end marks belong to the flexible part, NOT to the rigid F.Cu/F.SilkS."}
+}

@@ -1,0 +1,2 @@
+# Preserve the bytes of the source evidence table referenced by the drawing hashes.
+pcb/display/observations.csv -text whitespace=trailing-space,space-before-tab,cr-at-eol
