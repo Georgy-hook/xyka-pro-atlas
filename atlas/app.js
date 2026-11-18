@@ -72,6 +72,12 @@
     byId('announcer').textContent = text;
   }
 
+  function chooseFinish(id) {
+    state.finish = id;
+    render();
+    announce(`Расцветка корпуса: ${byId('finish-name').textContent}`);
+  }
+
   function focusPassport() {
     byId('part-focus').focus({preventScroll: true});
     if (narrow.matches) byId('register').scrollIntoView({block: 'start'});
@@ -109,11 +115,7 @@
       state.explode = value;
       render();
     },
-    onFinish(id) {
-      state.finish = id;
-      render();
-      announce(`Расцветка корпуса: ${byId('finish-name').textContent}`);
-    },
+    onFinish: chooseFinish,
     onViewport(status, catalogScreen = false) {
       state.viewport = status;
       state.screenOn = catalogScreen;
@@ -127,6 +129,11 @@
 
   const service = window.AtlasService.create({
     data, parts, groups: groupIndex, onStep: setStep, onPart: id => selectPart(id, 'service')
+  });
+
+  const product = window.AtlasProduct.create({
+    data, finishes, onFinish: chooseFinish, onOverview: () => switchPage('assembly'),
+    onStep: setStep, onGroup: id => switchGroup(id, true)
   });
 
   const evidenceContext = {data, notes, onPart: id => selectPart(id, 'specs')};
@@ -185,6 +192,7 @@
       renderedSpecs = true;
     }
     service.render(state);
+    product.render(state.finish, printOnly);
     drawing.render(state, intent, pose);
     const flags = document.documentElement.dataset;
     flags.activePage = state.page;
@@ -206,13 +214,15 @@
     if (state.page === page) return;
     state.page = page;
     render();
+    if (page === 'assembly') revealTab(byId(`node-${state.group}`));
+    window.scrollTo({top: 0, behavior: 'instant'});
   }
 
-  function switchGroup(id) {
-    if (state.group === id && !state.isolated && !state.serviceStep) return;
+  function switchGroup(id, openDefaultView = false) {
+    if (!openDefaultView && state.group === id && !state.isolated && !state.serviceStep) return;
     Object.assign(state, {group: id, query: '', sub: '', selected: null, isolated: null, serviceStep: null, explode: 0, view: 'iso'});
     returnView = 'iso';
-    render();
+    render(openDefaultView ? 'reset' : undefined);
   }
 
   function setStep(id) {
@@ -244,7 +254,7 @@
     render();
     if (fromSheet) {
       revealTab(byId(`node-${state.group}`));
-      if (!narrow.matches) byId('sheets').scrollIntoView({block: 'nearest'});
+      if (!narrow.matches) byId('drawing').scrollIntoView({block: 'start'});
     }
     if (origin !== 'drawing' || narrow.matches) focusPassport();
     announce(`Выбрано: ${part.label || part.id}. CAD ID: ${part.id}`);
@@ -292,6 +302,9 @@
   for (const tab of pageTabs) tab.addEventListener('click', () => switchPage(tab.dataset.page));
   bindTabKeys(byId('sheets-nav'), pageTabs);
   bindTabKeys(byId('group-tabs'), groupTabs);
+  window.addEventListener('resize', () => {
+    if (state.page === 'assembly') revealTab(byId(`node-${state.group}`));
+  });
   byId('to-register').addEventListener('click', event => {
     event.preventDefault();
     if (state.selected) focusPassport();

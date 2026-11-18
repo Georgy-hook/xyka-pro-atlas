@@ -1,49 +1,53 @@
+/* Evidence stays continuous: paired CAD/reference values, then the qualification and source. */
 .ev-sheet,
 .ev-passport {
-  box-sizing: border-box;
-  container-type: inline-size;
   width: 100%;
   min-width: 0;
   margin: 0;
-  color: var(--ink, #242521);
-  background-color: var(--paper, #faf9f5);
-  font-family: var(--sans, system-ui, sans-serif);
-  line-height: 1.5;
+  color: var(--ink);
+  font: 400 16px/1.5 var(--sans);
   overflow-wrap: anywhere;
 }
 
-.ev-sheet *,
-.ev-passport * {
-  box-sizing: border-box;
-}
-
 .ev-sheet {
-  max-width: 74rem;
+  container: specs / inline-size;
+  max-width: 1120px;
   margin-inline: auto;
-  padding: clamp(1rem, 3vw, 3rem);
+  padding-block: clamp(28px, 4vw, 60px) 8px;
 }
 
 .ev-head {
-  border-top: 2px solid var(--ink, #242521);
-  padding-block: .8rem 1.4rem;
+  display: grid;
+  gap: 8px;
+  padding-bottom: clamp(18px, 2vw, 28px);
 }
 
 .ev-heading,
-.ev-subheading {
+.ev-subheading,
+.ev-title {
   margin: 0;
-  font-family: var(--display, Georgia, serif);
+  color: var(--ink);
+  font-family: var(--sans);
   font-weight: 600;
-  line-height: 1.1;
   text-wrap: balance;
 }
 
 .ev-heading {
-  margin-block-start: .5rem;
-  font-size: clamp(2rem, 4.2vw, 3.6rem);
+  font-size: clamp(32px, 4vw, 54px);
+  line-height: 1.07;
+  letter-spacing: -.045em;
 }
 
 .ev-subheading {
-  font-size: clamp(1.45rem, 2.5vw, 2rem);
+  font-size: clamp(22px, 2.15vw, 30px);
+  line-height: 1.16;
+  letter-spacing: -.032em;
+}
+
+.ev-title {
+  font-size: 18px;
+  line-height: 1.3;
+  letter-spacing: -.015em;
 }
 
 .ev-label,
@@ -51,32 +55,34 @@
 .ev-range,
 .ev-number {
   margin: 0;
-  color: var(--muted, #585951);
-  font-family: var(--mono, ui-monospace, monospace);
-  font-size: .78rem;
-  line-height: 1.45;
+  color: var(--muted);
+  font: 500 13px/1.45 var(--sans);
 }
 
-.ev-label {
-  letter-spacing: .04em;
+.ev-total,
+.ev-range,
+.ev-number,
+.ev-value {
+  font-variant-numeric: tabular-nums;
 }
 
-.ev-head > .ev-label,
-.ev-number {
-  color: var(--accent, #913c20);
-}
-
-.ev-boundary,
-.ev-record {
-  display: grid;
-  grid-template-columns: minmax(5.5rem, 16%) minmax(0, 1fr);
-  align-items: start;
-  gap: clamp(.75rem, 2vw, 2rem);
+.ev-head > .ev-label {
+  font-size: 14px;
 }
 
 .ev-boundary {
-  border-inline-start: 2px solid var(--accent, #913c20);
-  padding-inline-start: .85rem;
+  display: grid;
+  align-items: baseline;
+  gap: 4px 20px;
+  padding: clamp(16px, 2vw, 24px);
+  border-radius: 16px;
+  background: var(--field);
+}
+
+.ev-boundary > .ev-label {
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 600;
 }
 
 .ev-text,
@@ -89,22 +95,26 @@
 
 .ev-text,
 .ev-value {
-  max-width: 75ch;
+  max-width: 74ch;
   white-space: pre-line;
 }
 
 .ev-section {
-  margin-block-start: clamp(1.8rem, 4vw, 3rem);
-  border-top: 1px solid var(--ink, #242521);
+  margin-block-start: clamp(32px, 4vw, 58px);
 }
 
 .ev-section-head {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
   flex-wrap: wrap;
-  gap: .4rem 1rem;
-  padding-block: .85rem;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 4px 14px;
+  margin-bottom: 14px;
+}
+
+.ev-section-note {
+  max-width: 78ch;
+  margin-bottom: 14px;
 }
 
 .ev-list {
@@ -113,72 +123,90 @@
   list-style: none;
 }
 
-.ev-record {
-  margin: 0;
-  border-top: 1px solid var(--line, #c0c0b6);
-  padding-block: .95rem;
-}
-
-.ev-section-note {
-  max-width: 75ch;
-  margin-block-end: .65rem;
-}
-
+.ev-record,
 .ev-kit-row {
-  border-top: 1px solid var(--line, #c0c0b6);
-  padding-block: .5rem;
+  margin: 0;
+  border-top: 1px solid var(--line);
+  padding-block: clamp(16px, 1.75vw, 24px);
 }
 
-.ev-kit-line {
-  display: flex;
+.ev-record {
+  display: grid;
+  grid-template-columns: 2.5ch minmax(0, 1fr);
+  grid-template-areas: 'number entry';
   align-items: baseline;
-  flex-wrap: wrap;
-  gap: .15rem 1rem;
+  gap: 8px clamp(10px, 1.4vw, 20px);
 }
 
-.ev-kit-row > .ev-citation {
-  margin-block-start: .15rem;
-  white-space: pre-line;
+.ev-record[data-ev-status] {
+  grid-template-areas: 'number entry' '. status';
 }
 
-.ev-margin,
+.ev-margin {
+  display: contents;
+}
+
+.ev-number {
+  grid-area: number;
+}
+
+.ev-status {
+  grid-area: status;
+  max-width: 70ch;
+}
+
 .ev-entry {
   display: grid;
+  grid-area: entry;
   min-width: 0;
-  gap: .45rem;
-}
-
-.ev-number,
-.ev-range,
-.ev-total,
-.ev-value[data-ev-field="bbox"] {
-  font-variant-numeric: tabular-nums;
+  gap: 8px;
 }
 
 .ev-status,
 .ev-citation,
 .ev-hint,
 .ev-empty {
-  color: var(--muted, #585951);
-  font-size: .875rem;
+  color: var(--muted);
+  font: 400 14px/1.5 var(--sans);
 }
 
 .ev-empty {
-  padding-block: .5rem;
+  padding-block: 4px;
 }
 
-.ev-title {
-  margin: 0;
-  font: 650 1.08rem/1.35 var(--sans, system-ui, sans-serif);
+.ev-comparison {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  align-items: baseline;
+  gap: 8px 20px;
+  margin: 2px 0;
+}
+
+.ev-comparison .ev-value {
+  margin-top: 3px;
+}
+
+.ev-comparison [data-ev-field='cad'] {
+  font-weight: 600;
+}
+
+.ev-kit-line {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+}
+
+.ev-kit-row > .ev-citation {
+  margin-top: 6px;
+  white-space: pre-line;
 }
 
 .ev-link,
-.ev-part,
-.ev-page {
-  color: var(--accent, #913c20);
+.ev-part {
+  color: var(--accent);
   text-decoration: underline;
-  text-underline-offset: .18em;
-  cursor: pointer;
+  text-underline-offset: .2em;
 }
 
 .ev-link {
@@ -186,147 +214,139 @@
 }
 
 .ev-inert {
-  color: var(--muted, #585951);
+  color: var(--muted);
+}
+
+.ev-material-title {
+  font-weight: 550;
+}
+
+.ev-id {
+  font: 500 13px/1.45 var(--mono);
 }
 
 .ev-part,
 .ev-page {
-  appearance: none;
-  min-height: 1.75rem;
+  min-height: 44px;
   max-width: 100%;
-  margin: 0;
-  border: 0;
-  border-radius: 0;
-  padding: .15rem 0;
-  background: transparent;
-  font: inherit;
-  text-align: start;
+  cursor: pointer;
   overflow-wrap: anywhere;
 }
 
-.ev-id {
-  font-family: var(--mono, ui-monospace, monospace);
-  font-size: .9rem;
+.ev-part {
+  padding: 4px 0;
+  text-align: start;
 }
 
-.ev-pager,
-.ev-tools {
+.ev-tools,
+.ev-pager {
   display: flex;
-  align-items: baseline;
   flex-wrap: wrap;
-  gap: .3rem 1rem;
-}
-
-.ev-comparison {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
-  gap: .6rem 1.25rem;
-  max-width: 66ch;
-  margin: .15rem 0;
-}
-
-.ev-comparison > .ev-pair {
-  border-inline-start: 1px solid var(--line, #c0c0b6);
-  padding-inline-start: .65rem;
+  align-items: center;
+  gap: 6px 10px;
 }
 
 .ev-tools {
   justify-content: space-between;
   align-items: end;
-  padding-block: .5rem .85rem;
+  gap: 12px 16px;
+  margin-block: 12px 16px;
 }
 
 .ev-search {
   display: grid;
-  flex: 1 1 13rem;
-  gap: .25rem;
+  flex: 1 1 14rem;
   min-width: 0;
-  max-width: 25rem;
+  max-width: 26rem;
+  gap: 5px;
 }
 
 .ev-input {
-  appearance: none;
   width: 100%;
-  min-width: 0;
-  min-height: 2.5rem;
-  border: 0;
-  border-bottom: 1px solid var(--muted, #585951);
-  border-radius: 0;
-  padding: .4rem .6rem;
-  background: var(--field, #f0f0ea);
-  color: var(--ink, #242521);
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 6px 12px;
+  background: var(--field);
+  color: var(--ink);
   font: inherit;
 }
 
 .ev-page {
-  min-height: 2.5rem;
-  font-size: .9rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 6px 11px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 550 14px/1.4 var(--sans);
 }
 
-.ev-page[aria-disabled="true"] {
-  color: var(--muted, #585951);
-  text-decoration: none;
+.ev-page[aria-disabled='true'] {
+  background: var(--wash);
+  color: var(--muted);
   cursor: default;
+}
+
+.ev-page:not([aria-disabled='true']):hover {
+  background: var(--field);
 }
 
 .ev-sheet :focus-visible,
 .ev-passport :focus-visible {
-  outline: 2px solid var(--accent, #913c20);
-  outline-offset: 3px;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
-/* The passport can be a narrow inspection column even on a wide screen. */
+.ev-passport {
+  container: facts / inline-size;
+  font-size: 15px;
+}
+
 .ev-passport > .ev-pair {
   display: grid;
-  grid-template-columns: minmax(7rem, 26%) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: baseline;
-  gap: .3rem 1rem;
-  border-top: 1px solid var(--line, #c0c0b6);
-  padding-block: .65rem;
+  gap: 4px 18px;
+  border-top: 1px solid var(--line);
+  padding-block: 13px;
+}
+
+.ev-passport [data-ev-field='bbox'] {
+  font-weight: 550;
 }
 
 .ev-hint {
   display: block;
-  margin-block-start: .25rem;
-  font-family: var(--sans, system-ui, sans-serif);
+  margin-top: 4px;
 }
 
 .ev-passport .ev-record {
-  grid-template-columns: 1fr;
-  gap: .25rem;
-  padding-block: .6rem;
-}
-
-.ev-passport .ev-margin {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: .25rem .6rem;
+  padding-block: 12px;
 }
 
 .ev-passport .ev-record:first-child {
   border: 0;
-  padding-block-start: 0;
+  padding-top: 0;
 }
 
-@container (max-width: 36rem) {
-  .ev-record,
+@container specs (min-width: 46rem) {
   .ev-boundary {
-    grid-template-columns: minmax(0, 1fr);
-    gap: .4rem;
+    grid-template-columns: minmax(10rem, 1fr) minmax(0, 3fr);
   }
 
-  .ev-margin {
-    display: flex;
-    align-items: baseline;
-    flex-wrap: wrap;
-    gap: .25rem .7rem;
+  .ev-record[data-ev-row='dimension'] {
+    grid-template-areas: 'number entry status';
+    grid-template-columns: 3ch minmax(0, 1fr) minmax(14rem, 26%);
+  }
+
+  .ev-kit-line {
+    display: grid;
+    grid-template-columns: minmax(0, 1.3fr) minmax(8rem, .5fr) minmax(0, 1fr);
   }
 }
 
-@container (max-width: 26rem) {
+@container facts (min-width: 34rem) {
   .ev-passport > .ev-pair {
-    grid-template-columns: minmax(0, 1fr);
-    gap: .2rem;
+    grid-template-columns: minmax(9rem, 26%) minmax(0, 1fr);
   }
 }

@@ -10,6 +10,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const {pathToFileURL} = require('node:url');
+const product = require('./verify_product_page.cjs');
 
 const baseline = process.env.ATLAS_UI_BASELINE === '1';
 const report = {mode: baseline ? 'baseline' : 'release', releaseAccepted: false, scenarios: [], screenshotSHA256: {}};
@@ -65,6 +66,11 @@ async function checkSheets(page, active) {
     assert.equal(await page.locator(`#${id}`).isVisible(), selected);
   }
   assert.equal(await page.evaluate(() => AtlasUI.getState().page), active);
+  if (!baseline) {
+    const overview = page.locator('#assembly #overview');
+    assert.equal(await overview.count(), 1, 'The product is inside the assembly sheet, never a third sheet');
+    assert.equal(await overview.isVisible(), active === 'assembly', 'Specs hides the entire product overview');
+  }
 }
 
 async function visit(page, url, mode = 'ready') {
@@ -663,7 +669,7 @@ async function noScreen(page) {
   if (!baseline || 'screenOn' in state) assert.equal(state.screenOn, false);
 }
 
-async function legacyControls(page, data, rest, original, shot) {
+async function legacyControls(page, data, rest, original, shot, productFrames) {
   const {ids, groups, byId, groupOf, memberIDs, notes} = data;
   const state = () => stateOf(page);
   const viewHash = async () => (await pixels(page)).all;
@@ -674,10 +680,14 @@ async function legacyControls(page, data, rest, original, shot) {
     await page.locator(`[data-finish="${finish}"]`).click();
     assert.equal((await state()).finish, finish);
     colors.push(await viewHash());
-    if (finish === 'blue') await shot('atlas-assembly');
+    if (!baseline) {
+      await product.checkFinish(page, finish);
+      assert.equal(colors.at(-1), productFrames.get(finish), `${finish}: same rendered finish from either control`);
+    }
   }
   verify('four real surface palettes render four distinct frames', colors.length === 4 && new Set(colors).size === 4);
   await action(page, 'reset').click();
+  if (!baseline) await product.checkFinish(page, 'graphite');
   const before = await viewHash();
   assert.equal(before, original, 'Reset restores the initial palette and frame');
   await page.locator('#explode-slider [role="slider"]').press('End');
@@ -737,6 +747,12 @@ async function fallbackControls(fallback, index, root, data, plan, original, cle
   const alt = await fallback.newPage();
   await visit(alt, `${index}?no-webgl`, 'fallback');
   await noScreen(alt);
+  if (!baseline) {
+    await product.checkFinish(alt, 'graphite');
+    await product.checkLayout(alt);
+    await alt.locator(product.productButton('silver')).click();
+    await product.checkFinish(alt, 'silver');
+  }
   await groupTabs(alt, data);
   for (const group of groups) await checkGroup(alt, data, group);
   const print = alt.locator('#print-image');
@@ -793,7 +809,8 @@ async function run() {
     report.browser = `Chromium ${browser.version()}`;
     const errors = [], external = [];
     async function openContext() {
-      const context = await browser.newContext({offline: true, serviceWorkers: 'block', viewport: {width: 1440, height: 960}, deviceScaleFactor: 1});
+      const context = await browser.newContext({offline: true, serviceWorkers: 'block', reducedMotion: 'reduce',
+        viewport: {width: 1440, height: 960}, deviceScaleFactor: 1});
       context.on('request', r => { if (/^(https?|wss?):/i.test(r.url())) external.push(r.url()); });
       context.on('page', p => {
         p.on('pageerror', e => errors.push(e.message));
@@ -811,12 +828,33 @@ async function run() {
     const page = await context.newPage();
     const shot = async name => {
       await page.mouse.move(2, 1);
-      await page.evaluate(() => window.scrollTo(0, 0));
+      // Photograph the state just verified, not the top of a now much longer document.
+      if (name === 'atlas-mainboard' || name === 'atlas-exploded') {
+        const canvas = page.locator('#atlas-canvas');
+        await canvas.evaluate(el => el.scrollIntoView({block: 'center', inline: 'nearest', behavior: 'instant'}));
+        await product.inFrame(canvas, .90, `${name}: actual WebGL canvas`);
+        await product.inFrame(page.locator('#drawing-title'), .95, `${name}: drawing title`);
+        if (name === 'atlas-mainboard') {
+          assert.equal((await stateOf(page)).group, 'MainPCB');
+          await product.inFrame(page.locator('#register-title'), .95, 'MainPCB register heading');
+          await product.inFrame(page.locator('#part-list [data-part-id]').first(), .90, 'MainPCB register entries');
+        } else {
+          assert.equal((await stateOf(page)).explode, 1);
+          await product.inFrame(page.locator('#explode-value'), .95, 'Full explosion control');
+        }
+      } else {
+        assert.ok(await page.evaluate(() => Math.abs(scrollY) <= 1), `${name}: actual first screen`);
+        if (!baseline) {
+          await product.checkFinish(page, 'graphite');
+          await product.checkLayout(page);
+        }
+      }
       await frames(page);
-      const bytes = await page.screenshot({path: path.join(outputs, `${name}.png`), animations: 'disabled'});
+      const bytes = await page.screenshot({path: path.join(outputs, `${name}.png`), fullPage: false, animations: 'disabled'});
       report.screenshotSHA256[name] = hash(bytes);
     };
     await visit(page, index);
+    await shot('atlas-assembly'); // Untouched landing state, before any palette or viewer interaction.
     const data = await readCatalogue(page, root);
     const rest = await frame(page);
     const original = (await pixels(page)).all;
@@ -826,17 +864,43 @@ async function run() {
     report.scenarios.push('one catalogue row for each independently selectable CAD leaf');
     await groupTabs(page, data);
     let plan;
+    const productFrames = new Map();
     if (!baseline) {
       plan = servicePlan(data);
       plan.filmIndex = checkRetailRoles(data, plan);
       await checkPose(page, plan, 0);
       await assertScreen(page, true);
+      console.log('=== Product overview: local studio finishes, real palette, navigation and service CTA');
+      report.product = {imageSHA256: await product.checkOptions(page, root)};
+      const studioFrames = new Set();
+      for (const finish of product.finishes) {
+        await page.locator(product.productButton(finish)).click();
+        await product.checkFinish(page, finish);
+        // Compare the visible illustration alone, excluding changed captions and swatch outlines.
+        studioFrames.add(hash(await page.locator('#product-image').screenshot({animations: 'disabled'})));
+        productFrames.set(finish, (await pixels(page)).all);
+      }
+      assert.equal(studioFrames.size, product.finishes.length, 'All four decoded studio images look different');
+      await action(page, 'reset').click();
+      await product.checkFinish(page, 'graphite');
+      await product.checkNavigation(page, plan.steps[0].id, turnSheet, checkSheets);
+      await checkPose(page, plan, 1, false);
+      checkWorld(await frame(page), rest, plan.totals[1], 'Service CTA really moves the first issued parts');
+      await action(page, 'reset').click();
     } else if (!data.scene.presentation?.lcd) await noScreen(page);
-    await legacyControls(page, data, rest, original, shot);
+    await legacyControls(page, data, rest, original, shot, productFrames);
     if (!baseline) {
       console.log('=== Retail: camera axes, optical aperture, every accumulated service pose and rollback');
       await action(page, 'reset').click();
       await releaseControls(page, data, plan, rest, original);
+    }
+    if (!baseline) {
+      for (const [width, height] of [[1280, 800], [768, 1024], [360, 740]]) {
+        await page.setViewportSize({width, height});
+        await page.evaluate(() => window.scrollTo({top: 0, left: 0, behavior: 'instant'}));
+        await frames(page);
+        await product.checkLayout(page);
+      }
     }
     await page.setViewportSize({width: 390, height: 844});
     await turnSheet(page, 'specs');
@@ -844,6 +908,7 @@ async function run() {
     const width = await page.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]);
     verify('mobile layout has no document-level horizontal overflow', width[0] <= width[1] + 1);
     await action(page, 'reset').click();
+    await page.evaluate(() => window.scrollTo({top: 0, left: 0, behavior: 'instant'}));
     await shot('atlas-mobile');
     verify('no uncaught browser exception and no remote request', clean());
     await context.close();
@@ -853,6 +918,9 @@ async function run() {
     await fallbackControls(fallback, index, root, data, plan, original, clean);
     await fallback.close();
     if (baseline) assert.equal(report.scenarios.length, 16, 'Preserve the sixteen baseline scenarios');
+    else assert.equal(report.scenarios.length, 24, 'Preserve all 24 release scenarios');
+    sameIDs(Object.keys(report.screenshotSHA256), ['atlas-assembly', 'atlas-exploded', 'atlas-mainboard', 'atlas-mobile'], 'Published screenshot keys');
+    assert.equal(new Set(Object.values(report.screenshotSHA256)).size, 4, 'Four distinct viewport captures');
     report.releaseAccepted = !baseline;
     const file = baseline ? 'ATLAS_BASELINE.json' : 'ATLAS_ACCEPTANCE.json';
     await fs.writeFile(path.join(outputs, file), JSON.stringify(report, null, 2) + '\n', {flag: 'wx'});

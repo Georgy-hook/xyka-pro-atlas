@@ -240,7 +240,7 @@
     page.lang = 'ru';
     page.dataset.evSheet = key;
     const head = el('header', 'ev-head');
-    head.append(el('p', 'ev-label', 'Атлас разборки / XKAH PRO'), el('h2', 'ev-heading', title));
+    head.append(el('p', 'ev-label', 'XYKA PRO · A4.3'), el('h2', 'ev-heading', title));
     const note = el('aside', 'ev-boundary');
     note.append(el('span', 'ev-label', 'Граница достоверности'), el('p', 'ev-text', boundary));
     page.append(head, note);

@@ -1,12 +1,12 @@
-# XKAH PRO · Teardown Atlas
+# Inside XYKA PRO
 
 [![License: MIT](docs/badges/license.svg)](LICENSE) [![FreeCAD 1.1.4](docs/badges/freecad.svg)](https://www.freecad.org/) [![glTF 2.0](docs/badges/format.svg)](https://www.khronos.org/gltf/) [![Offline viewer](docs/badges/offline.svg)](atlas/index.html)
 
-Explore the XYKA PRO from the blue logo on its display to the socket underneath. Follow 13 teardown stages: separate the two halves, lift out the labelled battery and open the stainless-steel pod to reveal its mesh. All 660 selectable parts share their geometry and IDs with the editable FreeCAD assembly.
+Meet the XYKA PRO in Graphite, Silver, Blue and Pink. Choose a finish in the studio, then take that same finish into the interactive model. All 660 selectable parts come from the editable FreeCAD assembly.
 
-![The browser atlas showing the assembled XKAH PRO](docs/screenshots/atlas-assembly.png)
+![Studio view of the XYKA PRO in Graphite](docs/screenshots/atlas-assembly.png)
 
-**[Open the atlas](atlas/index.html)** in the unpacked release. Follow the teardown from the tinted face film to the light-ring clips and the silicone keypad on board 20260305A. Pick a component in 3D, inspect its source, or switch between Graphite, Silver, Blue and Pink.
+**[Open the atlas](atlas/index.html)** from the unpacked release, even offline. Follow 13 teardown stages: separate the halves, lift out the labelled battery, open the steel pod and inspect the silicone keypad beneath the face film.
 
 ![Component-side view of the A4.3 mainboard in the atlas](docs/screenshots/atlas-mainboard.png)
 

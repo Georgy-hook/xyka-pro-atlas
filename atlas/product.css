@@ -1,0 +1,346 @@
+.product {
+  color-scheme: dark;
+  color: #f8f8fa;
+  background-color: #0a0b0e;
+  background-image: radial-gradient(ellipse 44% 65% at 74% 46%, #202329 0%, #121418 59%, transparent 100%);
+}
+
+.product-inner {
+  display: grid;
+  grid-template-areas: 'intro image' 'facts options';
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: auto minmax(102px, auto);
+  width: min(calc(100% - var(--gutter) * 2), var(--shell));
+  margin-inline: auto;
+}
+
+.product-copy {
+  grid-area: intro;
+  align-self: center;
+  z-index: 1;
+  padding-block: clamp(38px, 5vw, 84px);
+}
+
+.product-kicker {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  color: #c3c6cf;
+  font-size: 13px;
+  font-weight: 520;
+  letter-spacing: .035em;
+}
+
+.product-kicker span {
+  width: 22px;
+  height: 1px;
+  background: #797d89;
+}
+
+#product-title {
+  margin: 23px 0 22px -.045em;
+  font: 620 clamp(62px, 7.75vw, 120px)/.97 var(--display);
+  letter-spacing: -.046em;
+}
+
+#product-title span {
+  display: block;
+  color: #aaadb5;
+  font-weight: 510;
+}
+
+.product-intro {
+  max-width: 33ch;
+  color: #b9bcc5;
+  font-size: clamp(16px, 1.52vw, 22px);
+  line-height: 1.44;
+  letter-spacing: -.019em;
+  text-wrap: pretty;
+}
+
+.product-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px clamp(18px, 2.2vw, 32px);
+  margin-top: clamp(24px, 2.7vw, 42px);
+}
+
+.product-actions a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 47px;
+  font-size: 15px;
+  font-weight: 570;
+  letter-spacing: -.02em;
+  text-decoration: none;
+}
+
+.product-primary {
+  padding: 10px 21px;
+  border-radius: 40px;
+  color: #131417;
+  background: #f5f5f7;
+}
+
+.product-primary:hover {
+  background: #fff;
+}
+
+.product-secondary {
+  color: #ececf0;
+}
+
+.product-secondary:hover {
+  text-decoration: underline;
+  text-underline-offset: .22em;
+}
+
+.product-actions a [aria-hidden] {
+  font: 400 22px/1 var(--sans);
+}
+
+.product-visual {
+  grid-area: image;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  height: clamp(410px, 64svh, 650px);
+  padding: clamp(12px, 2.2vh, 24px) 0;
+  pointer-events: none;
+}
+
+#product-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  object-fit: contain;
+}
+
+.product-facts, .product-options {
+  display: flex;
+  align-items: center;
+  border-top: 1px solid #ffffff26;
+}
+
+.product-facts {
+  grid-area: facts;
+  column-gap: clamp(26px, 4vw, 70px);
+  padding-block: 20px;
+}
+
+.product-facts div {
+  position: relative;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 4px;
+}
+
+.product-facts dd {
+  color: #f2f2f4;
+  font: 550 clamp(24px, 2.35vw, 34px)/1 var(--display);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.055em;
+}
+
+.product-facts dt, .product-color-label span {
+  color: #aaadb6;
+  font-size: 13px;
+  letter-spacing: -.01em;
+}
+
+.product-facts a {
+  text-decoration: none;
+}
+
+.product-facts a::after {
+  content: '';
+  position: absolute;
+  inset: -5px;
+}
+
+.product-facts a:hover {
+  color: #fff;
+  text-decoration: underline;
+}
+
+.product-options {
+  grid-area: options;
+  justify-content: flex-end;
+  gap: 21px;
+  padding-block: 14px;
+}
+
+.product-color-label {
+  display: grid;
+  gap: 1px;
+  min-width: 74px;
+  line-height: 1.4;
+}
+
+.product-color-label strong {
+  font-size: 16px;
+  font-weight: 550;
+}
+
+#product-finishes {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.product-chip {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+}
+
+.product-chip::before, .product-chip::after {
+  content: '';
+  border-radius: inherit;
+}
+
+.product-chip::before {
+  width: 25px;
+  height: 25px;
+  border: 1px solid #ffffff2f;
+  background: var(--swatch);
+}
+
+.product-chip::after {
+  position: absolute;
+  inset: 4px;
+  border: 1.5px solid transparent;
+}
+
+.product-chip:hover::after {
+  border-color: #727783;
+}
+
+.product-chip[aria-pressed='true']::after {
+  border-color: #f3f4f7;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .product-chip::after, .product-primary, .sheets-nav button {
+    transition: background-color .16s ease, color .16s ease, border-color .16s ease;
+  }
+}
+
+@media (max-width: 800px) {
+  .product-inner {
+    grid-template-rows: auto minmax(84px, auto);
+  }
+
+  .product-options {
+    gap: 7px;
+  }
+
+  .product-facts {
+    column-gap: 28px;
+  }
+}
+
+@media (max-width: 680px) {
+  .product {
+    background-image: radial-gradient(ellipse 78% 34% at 50% 59%, #202329, #121418 62%, transparent);
+  }
+
+  .product-inner {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: 'intro' 'image' 'options' 'facts';
+    grid-template-rows: repeat(4, auto);
+  }
+
+  .product-copy {
+    padding: 35px 0 0;
+    text-align: center;
+  }
+
+  .product-kicker, .product-actions {
+    justify-content: center;
+  }
+
+  .product-kicker {
+    font-size: 12px;
+  }
+
+  #product-title {
+    margin: 15px 0 14px;
+    font-size: clamp(50px, 12.5vw, 70px);
+    line-height: .97;
+  }
+
+  .product-intro {
+    max-width: 34ch;
+    margin-inline: auto;
+    font-size: 16px;
+    line-height: 1.37;
+  }
+
+  .product-actions {
+    gap: 22px;
+    margin-top: 16px;
+  }
+
+  .product-actions a {
+    min-height: 44px;
+    font-size: 14px;
+  }
+
+  .product-primary {
+    padding-inline: 17px;
+  }
+
+  .product-visual {
+    height: clamp(235px, 36svh, 332px);
+    margin-top: 8px;
+    padding: 2px 0 0;
+  }
+
+  .product-options {
+    justify-content: center;
+    gap: 16px;
+    padding: 5px 0 18px;
+    border: 0;
+  }
+
+  .product-color-label {
+    min-width: 58px;
+  }
+
+  .product-color-label span, .product-facts dt {
+    font-size: 12px;
+  }
+
+  #product-finishes {
+    gap: 0;
+  }
+
+  .product-facts {
+    justify-content: space-around;
+    gap: 12px;
+    padding: 18px 0 20px;
+    text-align: center;
+  }
+
+  .product-facts dd {
+    font-size: 26px;
+  }
+}
+
+@media print {
+  .masthead {
+    position: static;
+  }
+
+  .product-actions, #product-finishes {
+    display: none;
+  }
+}

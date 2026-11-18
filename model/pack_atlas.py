@@ -20,6 +20,8 @@ from pack_release import REQUIRED, checksum
 
 
 ROOT = Path(__file__).resolve().parent.parent
+STUDIO_IMAGES = {finish: Path('atlas/media') / f'hero-{finish}.webp'
+                 for finish in ('graphite', 'silver', 'blue', 'pink')}
 EXTENSIONS = {'.svg', '.png', '.pdf', '.js', '.cjs', '.css', '.html', '.py', '.md', '.txt', '.json',
               '.csv', '.glb', '.kicad_pcb', '.kicad_pro', '.kicad_mod'}
 
@@ -113,6 +115,8 @@ def check(root):
     for name in ('atlas-assembly', 'atlas-mainboard'):
         if checksum(root/'docs/screenshots'/(name+'.png')) != qa['screenshotSHA256'][name]:
             raise ValueError(f'Screenshot not from verified release: {name}')
+    if {finish: checksum(root / path) for finish, path in STUDIO_IMAGES.items()} != qa['product']['imageSHA256']:
+        raise ValueError('Studio finish images differ from the accepted product page')
     if [s['id'] for s in scene['service']['steps']] != service['steps']:
         raise ValueError('Wrong teardown sequence in offline payload')
     check_drawings(root, sha)
@@ -123,6 +127,7 @@ def entries(root):
     paths = {root/n for n in (*REQUIRED, 'XKAH_Finish.FCMacro', 'ATLAS_ACCEPTANCE.json', 'LICENSE',
                              'atlas/index.html', 'atlas/viewport.js', 'atlas/vendor/three-atlas.js',
                              'atlas/evidence.js', 'atlas/data/scene.js', 'atlas/data/atlas.glb')}
+    paths.update(root / image for image in STUDIO_IMAGES.values())
     for pattern in ('model/*.py', 'model/*.json', 'model/*.cjs', 'drawings/**/*', 'pcb/**/*',
                     'XKAH_PRO_A43_*.png', 'XKAH_PRO_A43_*.pdf', 'atlas/**/*', 'docs/**/*'):
         for item in root.glob(pattern):

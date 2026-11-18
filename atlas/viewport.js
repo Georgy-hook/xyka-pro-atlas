@@ -316,22 +316,6 @@
     }
   }
 
-  function makeBackdrop(T) {
-    const strip = document.createElement('canvas');
-    strip.width = 2;
-    strip.height = 128;
-    const paint = strip.getContext('2d');
-    const wash = paint.createLinearGradient(0, 0, 0, strip.height);
-    wash.addColorStop(0, '#e5e3dd');
-    wash.addColorStop(0.56, '#f2f0e9');
-    wash.addColorStop(1, '#e5e2da');
-    paint.fillStyle = wash;
-    paint.fillRect(0, 0, strip.width, strip.height);
-    const texture = new T.CanvasTexture(strip);
-    texture.colorSpace = T.SRGBColorSpace;
-    return texture;
-  }
-
   // A local linear-radiance light field. Broad neutral reflectors reveal satin edges and
   // conductive pads without replacing calibrated base colours or guessing material types.
   function makeEnvironment(T) {
@@ -368,7 +352,7 @@
   }
 
   function makeStudio(T, renderer, scene) {
-    scene.background = makeBackdrop(T);
+    scene.background = new T.Color(0xf5f5f7);
     scene.environment = makeEnvironment(T);
     scene.environmentIntensity = 1.14;
     const sky = new T.HemisphereLight(0xfff9ed, 0xc7c6c1, 0.66);
@@ -416,7 +400,6 @@
         floor.geometry.dispose();
         floor.material.dispose();
         key.shadow.dispose();
-        scene.background.dispose();
         scene.environment.dispose();
         scene.background = null;
         scene.environment = null;
