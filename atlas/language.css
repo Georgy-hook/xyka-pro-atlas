@@ -32,6 +32,7 @@
 
 .language-open {
   overflow: hidden;
+  padding-inline-end: var(--language-gutter, 0px);
 }
 
 #language-dialog:not([open]) {
@@ -42,34 +43,58 @@
   position: fixed;
   z-index: 50;
   inset: 0;
+  display: flex;
   width: 100%;
   height: 100%;
+  height: 100dvh;
   max-width: none;
   max-height: none;
   margin: 0;
-  padding: 0;
+  padding: clamp(14px, 3.6vmin, 40px);
+  padding-block: max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-bottom));
   border: none;
-  overflow-y: auto;
+  overflow: auto;
+  overscroll-behavior: contain;
   color: var(--ink);
-  background: var(--paper);
+  background: transparent;
+  --unfold: cubic-bezier(.19, .78, .22, 1);
 }
 
 #language-dialog::backdrop {
-  background: #fff;
+  background: transparent;
+}
+
+/* One graphite ground for the open plate and the language mark across the cut. */
+#language-dialog::before, html[data-locale-stamp]::before {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(125deg, #303641 0%, #171b22 58%, #101318 100%);
+}
+
+#language-dialog::before {
+  content: '';
+  opacity: .78;
 }
 
 .language-sheet {
-  width: min(100% - 2 * var(--gutter), 840px);
-  margin: 0 auto;
-  padding: 18px 0 max(48px, env(safe-area-inset-bottom));
+  position: relative;
+  width: min(100%, 940px);
+  margin: auto;
+  padding: clamp(16px, 2vw, 26px) clamp(24px, 4.6vw, 66px) clamp(28px, 5vw, 64px);
+  border: 1px solid #ffffffba;
+  border-radius: clamp(14px, 2vw, 24px);
+  background: linear-gradient(125deg, #fff 35%, #f4f5f7);
+  box-shadow: 0 20px 78px #070a112c, 0 2px 8px #070a111a;
+  transform-origin: var(--hinge-x, 50%) var(--hinge-y, 0%);
 }
 
 .language-mast {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-bottom: 14px;
-  margin-bottom: clamp(44px, 11vh, 124px);
+  padding-bottom: 12px;
+  margin-bottom: clamp(25px, 6vh, 58px);
   border-bottom: 1px solid var(--line);
   font: 650 19px/1 var(--display);
   letter-spacing: -.035em;
@@ -86,54 +111,208 @@
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  background: var(--field);
+  background: #e9ebef;
   font: 360 28px/1 var(--sans);
 }
 
+#language-close:hover {
+  background: #dfe3e9;
+}
+
+.language-sheet .chapter-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.language-sheet .chapter-label::before {
+  content: '';
+  width: 23px;
+  height: 2px;
+  background: var(--accent);
+}
+
 #language-title {
-  max-width: 18ch;
-  font: 620 clamp(38px, 5.4vw, 78px)/1.05 var(--display);
-  letter-spacing: -.045em;
+  font: 620 clamp(37px, 5.2vw, 70px)/1.05 var(--display);
+  letter-spacing: -.047em;
+  text-wrap: balance;
 }
 
 .language-intro {
-  margin-top: 14px;
+  margin-top: 12px;
   color: var(--muted);
-  font-size: clamp(16px, 1.5vw, 21px);
+  font-size: clamp(16px, 1.45vw, 20px);
 }
 
 .language-list {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 24px;
+  gap: 16px;
   padding: 0;
-  margin: clamp(36px, 7vh, 68px) 0 0;
+  margin: clamp(26px, 5.6vh, 54px) 0 0;
   list-style: none;
 }
 
 .language-list a {
   display: flex;
+  position: relative;
   align-items: center;
   justify-content: space-between;
-  min-height: 74px;
-  gap: 12px;
-  border-block: 1px solid var(--line);
+  min-height: 68px;
+  gap: 10px;
+  padding-inline: 10px;
+  border-block: 1px solid #c6cbd3;
   text-decoration: none;
-  font-size: 20px;
-  font-weight: 550;
+  font: 550 clamp(18px, 1.65vw, 23px)/1.2 var(--display);
+  letter-spacing: -.02em;
 }
 
-.language-list a:hover {
+.language-list a::before {
+  content: '';
+  position: absolute;
+  inset: -1px 0 auto;
+  height: 2px;
+  background: var(--accent);
+  transform: scaleX(0);
+  transform-origin: left;
+}
+
+.language-list a:is([aria-current='true'], :hover, :focus-visible) {
   color: var(--accent);
+  background: #e9edf580;
+}
+
+.language-list a:is([aria-current='true'], :hover, :focus-visible)::before {
+  transform: none;
 }
 
 .language-check {
   visibility: hidden;
-  color: var(--accent);
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: #fff;
+  background: var(--accent);
+  font: 600 13px/1 var(--sans);
 }
 
 .language-list [aria-current='true'] .language-check {
   visibility: visible;
+}
+
+@media screen and (prefers-reduced-motion: no-preference) {
+  #language-dialog::before {
+    transition: opacity 280ms ease-out;
+  }
+
+  .language-sheet {
+    transition: transform 360ms var(--unfold), opacity 240ms ease-out;
+  }
+
+  .language-sheet :is(.chapter-label, h2, .language-intro, li) {
+    transition: transform 280ms var(--unfold), opacity 220ms ease-out;
+    transition-delay: var(--ink-delay, 36ms);
+  }
+
+  #language-title { --ink-delay: 48ms; }
+  .language-intro { --ink-delay: 66ms; }
+  .language-list li { --ink-delay: 78ms; }
+  .language-list li:nth-child(2) { --ink-delay: 100ms; }
+  .language-list li:nth-child(3) { --ink-delay: 122ms; }
+
+  .language-list a::before {
+    transition: transform 180ms var(--unfold);
+  }
+
+  #language-dialog:is([data-phase='folded'], [data-phase='closing'])::before {
+    opacity: 0;
+    transition-duration: var(--language-exit);
+  }
+
+  #language-dialog:is([data-phase='folded'], [data-phase='closing']) .language-sheet {
+    opacity: 0;
+    transform: scale(.84);
+    transition-duration: var(--language-exit), 172ms;
+  }
+
+  #language-dialog:is([data-phase='folded'], [data-phase='closing']) .language-sheet :is(.chapter-label, h2, .language-intro, li) {
+    opacity: 0;
+    transform: translateY(var(--ink-offset, -9px));
+    transition-duration: 150ms;
+    transition-delay: 0ms;
+  }
+
+  /* Selecting is not a close. The ink stamp holds still across a real document
+     navigation. Its two paint layers are identical on disk and over HTTPS. */
+  #language-dialog::after, html[data-locale-stamp]::after {
+    content: attr(data-locale-stamp);
+    content: attr(data-locale-stamp) / '';
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    width: min(100% - 36px, 304px);
+    padding: 23px 24px 23px 77px;
+    border: 1px solid #ffffffba;
+    border-radius: 14px;
+    background: #f5f6f8 url('icons/studio-mark.svg') 23px center / 34px no-repeat;
+    color: #191d24;
+    box-shadow: 0 12px 42px #070a1126;
+    font: 570 29px/1.15 var(--display);
+    letter-spacing: -.035em;
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+  }
+
+  #language-dialog::after {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 7px));
+    transition: opacity 148ms ease-out, transform 180ms var(--unfold);
+  }
+
+  #language-dialog[data-phase='selecting']::before,
+  #language-dialog[data-phase='selecting']::after {
+    opacity: 1;
+    transition-duration: 165ms;
+  }
+
+  #language-dialog[data-phase='selecting']::after {
+    transform: translate(-50%, -50%);
+  }
+
+  #language-dialog[data-phase='selecting'] .language-sheet {
+    transform: scale(.97);
+    opacity: 0;
+    transition-duration: 180ms, 155ms;
+  }
+
+  html[data-locale-stamp]::before {
+    content: '';
+    z-index: 50;
+  }
+
+  html[data-locale-stamp]::after {
+    z-index: 51;
+  }
+
+  html.language-arrived::before, html.language-arrived::after {
+    animation: release-edition 220ms ease-out both;
+  }
+
+  @keyframes release-edition {
+    to { opacity: 0; }
+  }
+}
+
+/* Removing a duration alone need not cancel a CSS transition already in flight. */
+@media (prefers-reduced-motion: reduce) {
+  #language-dialog::before,
+  #language-dialog::after,
+  #language-dialog *,
+  #language-dialog *::before {
+    transition-property: none;
+  }
 }
 
 html:lang(zh) {
@@ -160,8 +339,11 @@ html:lang(zh) #product-title span {
     grid-template-columns: 1fr;
     gap: 0;
   }
+  .language-list a {
+    min-height: 54px;
+  }
   .language-list li + li a {
-    border-top: none;
+    margin-top: -1px;
   }
 }
 

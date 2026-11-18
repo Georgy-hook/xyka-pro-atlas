@@ -12,14 +12,17 @@
   <link rel="stylesheet" href="vendor/nouislider/nouislider.min.css">
   <link rel="stylesheet" href="atlas.css">
   <link rel="stylesheet" href="product.css">
-  <link rel="stylesheet" href="workspace.css">
+  <link rel="stylesheet" href="workspace.css?v=1.2">
   <link rel="stylesheet" href="service.css">
-  <link rel="stylesheet" href="register.css">
+  <link rel="stylesheet" href="register.css?v=1.2">
   <link rel="stylesheet" href="evidence-ui.css">
-  <link rel="stylesheet" href="language.css">
-  <script src="locales/language.js"></script>
-  <script defer src="locales/chrome.js"></script>
-  <script defer src="app-language.js"></script>
+  <link rel="stylesheet" href="mobile.css">
+  <link rel="stylesheet" href="language.css?v=1.2">
+  <link rel="stylesheet" href="motion.css">
+  <script src="locales/language.js?v=1.2"></script>
+  <script defer blocking="render" src="locales/chrome.js"></script>
+  <script defer src="app-language.js?v=1.2"></script>
+  <script defer src="app-studio-motion.js"></script>
   <script defer src="data/scene.js"></script>
   <script defer src="evidence.js"></script>
   <script defer src="locales/names.js"></script>
@@ -35,14 +38,15 @@
   <script defer src="locales/notes-spec.js"></script>
   <script defer src="locales/notes-research.js"></script>
   <script defer src="vendor/three-atlas.js"></script>
-  <script defer src="viewport.js"></script>
+  <script defer src="viewport-touch.js"></script>
+  <script defer src="viewport.js?v=1.2"></script>
   <script defer src="vendor/nouislider/nouislider.min.js"></script>
   <script defer src="app-register.js"></script>
-  <script defer src="app-drawing.js"></script>
+  <script defer src="app-drawing.js?v=1.2"></script>
   <script defer src="app-service.js"></script>
   <script defer src="app-evidence.js"></script>
-  <script defer src="app-product.js"></script>
-  <script defer src="app.js"></script>
+  <script defer src="app-product.js?v=1.2"></script>
+  <script defer src="app.js?v=1.2"></script>
 </head>
 <body>
   <a class="skip-link" href="#sheets">Перейти к содержанию листа</a>
@@ -107,55 +111,122 @@
             <div class="plate-column">
               <figure id="drawing" class="drawing" aria-labelledby="drawing-title" tabindex="-1">
                 <header class="sheet-heading">
+                  <label class="inspect-picker" for="inspect-group">
+                    <span id="inspect-group-label" class="sr-only">Узел модели</span>
+                    <select id="inspect-group" aria-controls="node-sheet"></select>
+                  </label>
                   <div class="sheet-title">
                     <span class="plate-number" id="figure-number">Фиг. 00</span>
                     <a class="plate-number" href="#service-step" id="step-link" title="К выбору этапа" hidden></a>
                     <h2 id="drawing-title">Общий вид</h2>
                   </div>
-                  <button class="text-action reset" type="button" data-action="reset" title="Вся сборка: изометрия, без разноса, исходная отделка и без фильтров">
-                    <img src="icons/rotate-clockwise.svg" alt="" width="18" height="18">Сбросить
+                  <button class="text-action reset" type="button" data-action="reset" aria-label="Сбросить"
+                          title="Вся сборка: изометрия, без разноса, исходная отделка и без фильтров">
+                    <img src="icons/rotate-clockwise.svg" alt="" width="18" height="18">
+                    <span>Сбросить</span>
                   </button>
                 </header>
-                <div class="drawing-field" id="drawing-field">
-                  <canvas id="atlas-canvas" role="img" aria-label="Интерактивная модель XYKA PRO. Детали также доступны в ведомости."></canvas>
-                  <div id="print-fallback" class="print-fallback" hidden>
-                    <img id="print-image" alt="Статичный вид собранной модели XYKA PRO со стороны экрана">
-                    <p id="print-note">3D недоступен. Показан общий вид из CAD; ведомость остаётся доступной.</p>
+                <div class="inspect-stage">
+                  <div class="drawing-field" id="drawing-field">
+                    <canvas id="atlas-canvas" role="img" aria-describedby="gesture-hint"
+                            aria-label="Интерактивная модель XYKA PRO. Детали также доступны в ведомости."></canvas>
+                    <div id="print-fallback" class="print-fallback" hidden>
+                      <img id="print-image" alt="Статичный вид собранной модели XYKA PRO со стороны экрана">
+                      <p id="print-note">3D недоступен. Показан общий вид из CAD; ведомость остаётся доступной.</p>
+                    </div>
+                    <div id="loading-note" class="loading-note" role="status">Открытие 3D-модели…</div>
+                    <div class="field-tools">
+                      <button type="button" class="field-action" data-action="leave-isolation" hidden>
+                        <img src="icons/arrow-left.svg" alt="" width="16" height="16">К общему виду
+                      </button>
+                    </div>
                   </div>
-                  <div id="loading-note" class="loading-note" role="status">Открытие 3D-модели…</div>
-                  <div class="field-tools">
-                    <button type="button" class="field-action" data-action="leave-isolation" hidden>
-                      <img src="icons/arrow-left.svg" alt="" width="16" height="16">К общему виду
-                    </button>
-                    <button type="button" class="field-action" data-action="fit" aria-label="Вписать вид в поле" title="Вписать вид в поле" disabled>
-                      <img src="icons/zoom-scan.svg" alt="" width="20" height="20">
-                    </button>
+                  <div class="inspect-console">
+                    <div class="inspect-readout">
+                      <p class="gesture-hint" id="gesture-hint">
+                        <span class="mouse-hint">Тянуть — поворот · Колесо — масштаб</span>
+                        <span class="touch-hint">
+                          <b>Вращайте модель одним пальцем.</b>
+                          <span>Щипок меняет масштаб. Коснитесь детали, чтобы выбрать её.</span>
+                        </span>
+                      </p>
+                      <a href="#part-focus" id="picked-caption" class="picked-caption" hidden>
+                        <span class="picked-desktop">Выбрано</span>
+                        <strong class="picked-desktop" id="picked-id"></strong>
+                        <span class="picked-detail">
+                          <strong id="picked-name"></strong>
+                          <span id="picked-open">Открыть паспорт детали</span>
+                        </span>
+                        <img class="picked-arrow" src="icons/chevron-right.svg" alt="" width="18" height="18">
+                      </a>
+                    </div>
+                    <div class="inspect-bar" role="group" aria-label="Управление моделью">
+                      <div class="inspect-pair">
+                        <span id="orbit-label">Поворот</span>
+                        <button type="button" data-inspect="left" aria-label="Повернуть камеру влево" disabled>
+                          <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M6 9c2-1 4-1.5 6-1.5 5 0 9 2 9 5s-4 5-9 5c-3 0-6-1-7.5-2.5M6 4.8 3.5 9.6l5.3 1.8"/>
+                          </svg>
+                        </button>
+                        <button type="button" data-inspect="right" aria-label="Повернуть камеру вправо" disabled>
+                          <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M18 9c-2-1-4-1.5-6-1.5-5 0-9 2-9 5s4 5 9 5c3 0 6-1 7.5-2.5M18 4.8l2.5 4.8-5.3 1.8"/>
+                          </svg>
+                        </button>
+                      </div>
+                      <div class="inspect-pair">
+                        <span id="zoom-label">Масштаб</span>
+                        <button type="button" data-inspect="out" aria-label="Отдалить модель" disabled>
+                          <span aria-hidden="true">−</span>
+                        </button>
+                        <button type="button" data-inspect="in" aria-label="Приблизить модель" disabled>
+                          <span aria-hidden="true">+</span>
+                        </button>
+                      </div>
+                      <div class="inspect-fit">
+                        <span id="fit-label">Вписать</span>
+                        <button type="button" class="field-action" data-action="fit" aria-label="Вписать вид в поле" title="Вписать вид в поле" disabled>
+                          <img src="icons/zoom-scan.svg" alt="" width="20" height="20">
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                  <a href="#part-focus" id="picked-caption" class="picked-caption" hidden><span>Выбрано</span> <strong id="picked-id"></strong></a>
                 </div>
-                <div class="projection-bar">
-                  <div class="view-switch" role="group" aria-label="Проекция модели">
-                    <button type="button" data-view="iso" aria-pressed="true" title="Изометрия" disabled><img src="icons/cube.svg" alt="" width="16" height="16">Изо</button>
-                    <button type="button" data-view="front" aria-pressed="false" disabled>Спереди</button>
-                    <button type="button" data-view="back" aria-pressed="false" disabled>Сзади</button>
-                    <button type="button" data-view="left" aria-pressed="false" disabled>Слева</button>
-                    <button type="button" data-view="right" aria-pressed="false" disabled>Справа</button>
-                    <button type="button" data-view="top" aria-pressed="false" disabled>Сверху</button>
-                    <button type="button" data-view="bottom" aria-pressed="false" disabled>Снизу</button>
+                <figcaption class="drawing-options">
+                  <div class="drawing-shortcuts">
+                    <button type="button" id="options-toggle" aria-controls="view-options" aria-expanded="false">
+                      <span>Настроить вид</span>
+                      <img src="icons/chevron-right.svg" width="14" height="14" alt="">
+                    </button>
+                    <a class="mobile-register-link" href="#register" id="to-register">
+                      <span>К ведомости</span>
+                      <img src="icons/chevron-right.svg" width="14" height="14" alt="">
+                    </a>
                   </div>
-                  <button class="screen-switch" type="button" data-action="screen" aria-label="Каталожная заставка экрана" aria-pressed="false" disabled>Экран: выкл.</button>
-                  <span class="gesture-hint" id="gesture-hint"><span class="mouse-hint">Тянуть — поворот · Колесо — масштаб</span><span class="touch-hint">Один палец — поворот · Щипок — масштаб</span></span>
-                  <a class="mobile-register-link" href="#register" id="to-register"><span>К ведомости</span><img src="icons/chevron-right.svg" width="13" height="13" alt=""></a>
-                </div>
-                <figcaption class="control-strip">
-                  <div class="explosion-control">
-                    <div class="control-label"><span id="explode-label">Разнос узлов</span><output id="explode-value" for="explode-native">0 %</output></div>
-                    <div class="slider-track" id="explode-slider" hidden></div>
-                    <input id="explode-native" type="range" min="0" max="100" value="0" step="1" aria-labelledby="explode-label" disabled>
-                  </div>
-                  <div class="finish-control">
-                    <div class="control-label"><span id="finish-label">Расцветка корпуса</span><output id="finish-name">—</output></div>
-                    <div id="finishes" class="finishes" role="group" aria-labelledby="finish-label"></div>
+                  <div id="view-options">
+                    <div class="projection-bar">
+                      <div class="view-switch" role="group" aria-label="Проекция модели">
+                        <button type="button" data-view="iso" aria-pressed="true" title="Изометрия" disabled><img src="icons/cube.svg" alt="" width="16" height="16">Изо</button>
+                        <button type="button" data-view="front" aria-pressed="false" disabled>Спереди</button>
+                        <button type="button" data-view="back" aria-pressed="false" disabled>Сзади</button>
+                        <button type="button" data-view="left" aria-pressed="false" disabled>Слева</button>
+                        <button type="button" data-view="right" aria-pressed="false" disabled>Справа</button>
+                        <button type="button" data-view="top" aria-pressed="false" disabled>Сверху</button>
+                        <button type="button" data-view="bottom" aria-pressed="false" disabled>Снизу</button>
+                      </div>
+                      <button class="screen-switch" type="button" data-action="screen" aria-label="Каталожная заставка экрана" aria-pressed="false" disabled>Экран: выкл.</button>
+                    </div>
+                    <div class="control-strip">
+                      <div class="explosion-control">
+                        <div class="control-label"><span id="explode-label">Разнос узлов</span><output id="explode-value" for="explode-native">0 %</output></div>
+                        <div class="slider-track" id="explode-slider" hidden></div>
+                        <input id="explode-native" type="range" min="0" max="100" value="0" step="1" aria-labelledby="explode-label" disabled>
+                      </div>
+                      <div class="finish-control">
+                        <div class="control-label"><span id="finish-label">Расцветка корпуса</span><output id="finish-name">—</output></div>
+                        <div id="finishes" class="finishes" role="group" aria-labelledby="finish-label"></div>
+                      </div>
+                    </div>
                   </div>
                 </figcaption>
               </figure>
@@ -201,7 +272,14 @@
                 <div class="parts-scroll" id="part-list" aria-label="Результаты поиска деталей" role="region"></div>
               </section>
               <section class="reg-pane" id="passport" aria-labelledby="part-focus" hidden>
-                <div class="passport-nav"><button type="button" class="text-action" data-action="catalog"><img src="icons/arrow-left.svg" width="16" height="16" alt="">К ведомости</button><span class="plate-number" id="passport-number"></span></div>
+                <div class="passport-nav">
+                  <a class="model-return" id="to-drawing" href="#drawing">
+                    <img src="icons/cube.svg" width="16" height="16" alt="">
+                    <span>К модели</span>
+                  </a>
+                  <button type="button" class="text-action" data-action="catalog"><img src="icons/arrow-left.svg" width="16" height="16" alt="">К ведомости</button>
+                  <span class="plate-number" id="passport-number"></span>
+                </div>
                 <div class="passport-scroll">
                   <p class="section-kicker">Паспорт детали</p>
                   <h2 id="part-focus" tabindex="-1"></h2>

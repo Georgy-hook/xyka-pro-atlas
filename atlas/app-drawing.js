@@ -43,7 +43,7 @@
     return t(raw, 'The 3D viewer could not display this model.', '3D 查看器无法显示此模型。');
   }
 
-  function create({data, finishes, onPick, onExplode, onFinish, onViewport}) {
+  function create({data, finishes, narrow, onPick, onExplode, onFinish, onViewport}) {
     const {t} = window.AtlasLocale;
     const byId = id => document.getElementById(id);
     const canvas = byId('atlas-canvas');
@@ -56,12 +56,83 @@
     const electrical = new Set(['MainPCB', 'DisplayPCB', 'Harness', 'Battery']);
     const shellIDs = new Set(data.parts.filter(p => !electrical.has(p.group)).map(p => p.id));
     const screenButton = document.querySelector('[data-action="screen"]');
+    const optionsToggle = byId('options-toggle');
+    const options = byId('view-options');
+    const instrumentBar = document.querySelector('.inspect-bar');
+    const instruments = Array.from(instrumentBar.querySelectorAll('[data-inspect]'));
     let viewport = null;
     let previous = null;
     let failed = false;
     let screenAvailable = false;
     let updatingRange = true;
     let rangeEnabled = null;
+    let optionsOpen = false;
+
+    const instrumentNames = {
+      left: t('Повернуть камеру влево', 'Orbit left', '向左环绕'),
+      right: t('Повернуть камеру вправо', 'Orbit right', '向右环绕'),
+      in: t('Приблизить модель', 'Zoom in', '放大模型'),
+      out: t('Отдалить модель', 'Zoom out', '缩小模型')
+    };
+    instrumentBar.setAttribute('aria-label', t('Управление моделью', 'Model controls', '模型操作'));
+    for (const button of instruments) {
+      button.title = instrumentNames[button.dataset.inspect];
+      button.setAttribute('aria-label', button.title);
+    }
+    byId('orbit-label').textContent = t('Поворот', 'Orbit', '旋转');
+    byId('zoom-label').textContent = t('Масштаб', 'Zoom', '缩放');
+    byId('fit-label').textContent = t('Вписать', 'Fit', '完整显示');
+    byId('picked-open').textContent = t('Открыть паспорт детали', 'Open part record', '查看零件档案');
+    const guide = byId('gesture-hint').querySelector('.touch-hint');
+    guide.querySelector('b').textContent = t('Вращайте модель одним пальцем.',
+      'Drag with one finger to rotate.', '单指拖动可旋转模型。');
+    guide.querySelector('span').textContent = t('Щипок меняет масштаб. Коснитесь детали, чтобы выбрать её.',
+      'Pinch to zoom. Tap a part to select it.', '双指捏合可缩放，轻点即可选中零件。');
+    optionsToggle.querySelector('span').textContent = t('Настроить вид', 'View settings', '视图设置');
+
+    function showOptions() {
+      // Don't leave an invisible row of projections or a slider in the tab order.
+      options.hidden = failed || (narrow.matches && !optionsOpen);
+      optionsToggle.hidden = failed;
+      optionsToggle.setAttribute('aria-expanded', String(!options.hidden));
+    }
+    optionsToggle.addEventListener('click', () => {
+      optionsOpen = !optionsOpen;
+      showOptions();
+    });
+    byId('drawing').addEventListener('keydown', event => {
+      if (event.key !== 'Escape' || !narrow.matches || !optionsOpen ||
+          !(options.contains(event.target) || optionsToggle.contains(event.target))) return;
+      event.stopPropagation();
+      optionsOpen = false;
+      showOptions();
+      optionsToggle.focus({preventScroll: true});
+    });
+    narrow.addEventListener('change', () => {
+      const wasEditing = options.contains(document.activeElement);
+      showOptions();
+      if (wasEditing && options.hidden && !failed) optionsToggle.focus({preventScroll: true});
+    });
+    showOptions();
+
+    instrumentBar.addEventListener('click', event => {
+      const button = event.target.closest('[data-inspect]');
+      if (!button || button.disabled || !viewport) return;
+      switch (button.dataset.inspect) {
+        case 'left':
+          viewport.turnBy(-20);
+          break;
+        case 'right':
+          viewport.turnBy(20);
+          break;
+        case 'in':
+          viewport.zoomBy(1.25);
+          break;
+        case 'out':
+          viewport.zoomBy(0.8);
+          break;
+      }
+    });
 
     function hasColor(value) {
       return typeof value === 'string' && /^#[\da-f]{6}$/i.test(value);
@@ -113,6 +184,7 @@
     function reportFailure(message) {
       if (failed) return;
       failed = true;
+      showOptions();
       const old = viewport;
       viewport = null;
       old?.destroy();
@@ -204,7 +276,11 @@
       canvas.classList.toggle('is-interactive', ready);
       byId('loading-note').hidden = state.viewport !== 'loading';
       byId('print-fallback').hidden = !fallback;
-      byId('gesture-hint').hidden = !ready;
+      byId('gesture-hint').hidden = !ready || Boolean(state.selected);
+      for (const button of instruments) {
+        const turn = button.dataset.inspect === 'left' || button.dataset.inspect === 'right';
+        button.disabled = !ready || typeof viewport?.[turn ? 'turnBy' : 'zoomBy'] !== 'function';
+      }
       screenButton.hidden = !hasScreen() || !ready;
       screenButton.disabled = screenButton.hidden;
       screenButton.setAttribute('aria-pressed', String(state.screenOn));
@@ -272,7 +348,13 @@
     window.addEventListener('pagehide', event => {
       if (!event.persisted) viewport?.destroy();
     });
-    return {start, render, setScreen};
+    return {
+      start,
+      render,
+      setScreen,
+      captureOrbit: () => viewport?.captureOrbit?.() ?? null,
+      restoreOrbit: orbit => viewport?.restoreOrbit?.(orbit)
+    };
   }
 
   window.AtlasDrawing = Object.freeze({create});

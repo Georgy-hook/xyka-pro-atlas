@@ -15,7 +15,8 @@
   }))];
   const groupIndex = new Map(groups.map(g => [g.id, g]));
   const pageTabs = Array.from(byId('sheets-nav').querySelectorAll('[role="tab"]'));
-  const narrow = window.matchMedia('(max-width: 780px)');
+  // A landscape phone still needs the stacked register and touch instrument panel.
+  const narrow = window.matchMedia('(max-width: 780px), (pointer: coarse) and (max-width: 1024px)');
   const state = {
     page: 'assembly', group: 'all', selected: null, isolated: null,
     query: '', sub: '', view: 'iso', explode: 0, finish: defaultFinish, viewport: 'loading',
@@ -27,6 +28,14 @@
   let registerKey = null;
   let restoreScreenOff = false;
   let restoringViewport = false;
+  let pendingOrbit = null;
+  let drawingWaypoint = null;
+
+  const groupPicker = byId('inspect-group');
+  byId('inspect-group-label').textContent = t('Узел модели', 'Model assembly', '模型组件');
+  for (const group of groups) groupPicker.add(new Option(`${group.no} · ${group.label}`, group.id));
+  groupPicker.addEventListener('change', () => switchGroup(groupPicker.value));
+  byId('to-drawing').querySelector('span').textContent = t('К модели', 'Back to model', '返回模型');
 
   function buildTab(group) {
     const button = document.createElement('button');
@@ -86,6 +95,30 @@
     if (narrow.matches) byId('register').scrollIntoView({block: 'start'});
   }
 
+  function openRecordFromDrawing(opener) {
+    if (narrow.matches) {
+      drawingWaypoint = {
+        id: state.selected, opener, width: innerWidth,
+        top: byId('drawing-field').getBoundingClientRect().top
+      };
+    }
+    focusPassport();
+  }
+
+  function backToDrawing() {
+    const mark = drawingWaypoint;
+    drawingWaypoint = null;
+    const field = byId('drawing-field');
+    if (mark && mark.id === state.selected && mark.width === innerWidth) {
+      // Measure from the field, not the document: titles can reflow above it.
+      window.scrollBy({top: field.getBoundingClientRect().top - mark.top, behavior: 'instant'});
+      mark.opener.focus({preventScroll: true});
+    } else {
+      byId('drawing').scrollIntoView({block: 'start'});
+      byId('drawing').focus({preventScroll: true});
+    }
+  }
+
   function revealTab(button) {
     // Scroll just the spine strip, not the page or the drawing under inspection.
     const strip = byId('group-tabs');
@@ -109,6 +142,7 @@
   const drawing = window.AtlasDrawing.create({
     data,
     finishes,
+    narrow,
     onPick(id) {
       if (state.page !== 'assembly') return;
       if (parts.has(id)) selectPart(id, 'drawing');
@@ -134,6 +168,9 @@
       }
       restoringViewport = false;
       render();
+      const orbit = pendingOrbit;
+      pendingOrbit = null;
+      if (status === 'ready' && orbit) drawing.restoreOrbit(orbit);
     }
   });
 
@@ -166,6 +203,7 @@
       // Step offsets and their focus part apply to the whole assembly, never to an isolated part.
       state.serviceStep = pose.id;
       state.view = pose.view;
+      if (parts.has(saved.selected)) state.selected = saved.selected;
     } else {
       if (groupIndex.has(saved.group)) state.group = saved.group;
       const part = parts.get(saved.selected);
@@ -191,6 +229,7 @@
       state.sub = saved.sub;
     }
     restoreScreenOff = saved.screenOn === false;
+    pendingOrbit = saved.orbit || null;
     restoringViewport = true;
     return Number.isFinite(saved.scrollY) && saved.scrollY >= 0 ? saved.scrollY : null;
   }
@@ -215,11 +254,14 @@
 
   function renderPassport() {
     const part = parts.get(state.selected);
+    if (part?.id !== drawingWaypoint?.id) drawingWaypoint = null;
+    byId('to-drawing').hidden = state.viewport !== 'ready';
     byId('register-pane').hidden = !!part;
     byId('passport').hidden = !part;
     byId('to-register').querySelector('span').textContent = part
       ? t('К паспорту', 'Part record', '零件档案') : t('К ведомости', 'Parts list', '零件清单');
     if (part && passportID !== part.id) {
+      byId('picked-name').textContent = part.label || part.id;
       byId('part-focus').textContent = part.label || part.id;
       byId('part-id').textContent = part.id;
       const number = register.position(part.id);
@@ -229,6 +271,7 @@
       byId('passport').querySelector('.passport-scroll').scrollTop = 0;
     }
     if (!part && passportID !== null) {
+      byId('picked-name').textContent = '';
       delete byId('passport').dataset.partId;
       byId('part-id').textContent = '';
       byId('part-focus').textContent = '';
@@ -246,7 +289,10 @@
       byId(button.dataset.page).hidden = !active;
     }
     for (const button of groupTabs) tabState(button, button.dataset.group === state.group);
-    byId('node-sheet').setAttribute('aria-labelledby', `node-${group.id}`);
+    groupPicker.value = group.id;
+    const sheet = byId('node-sheet');
+    sheet.setAttribute('role', narrow.matches ? 'region' : 'tabpanel');
+    sheet.setAttribute('aria-labelledby', narrow.matches ? 'drawing-title' : `node-${group.id}`);
     const printOnly = state.viewport === 'fallback';
     const showPose = pose && !printOnly;
     const figure = printOnly ? '00' : group.no;
@@ -327,7 +373,10 @@
   function selectPart(id, origin) {
     const part = parts.get(id);
     if (!part) return;
-    const fromSheet = origin === 'specs' || origin === 'service' || !!state.serviceStep;
+    // Inspecting a displaced part on a phone must not dismantle its stage or
+    // change the camera. Explicit list/service/spec links still open the record.
+    const stayInField = origin === 'drawing' && narrow.matches;
+    const fromSheet = origin === 'specs' || origin === 'service' || (state.serviceStep && !stayInField);
     if (fromSheet || (state.group !== 'all' && state.group !== part.group)) {
       Object.assign(state, {page: 'assembly', group: part.group, query: '', sub: '', isolated: null, serviceStep: null, explode: 0, view: 'iso'});
       returnView = 'iso';
@@ -341,7 +390,7 @@
       revealTab(byId(`node-${state.group}`));
       if (!narrow.matches) byId('drawing').scrollIntoView({block: 'start'});
     }
-    if (origin !== 'drawing' || narrow.matches) focusPassport();
+    if (origin !== 'drawing') focusPassport();
     const label = part.label || part.id;
     announce(t(`Выбрано: ${label}. CAD ID: ${part.id}`, `Selected: ${label}. CAD ID: ${part.id}`, `已选择：${label}。CAD ID：${part.id}`));
   }
@@ -363,6 +412,10 @@
       state.isolated = null;
       state.view = returnView;
     } else {
+      if (state.serviceStep) {
+        state.serviceStep = null;
+        state.view = 'iso';
+      }
       returnView = state.view;
       state.isolated = state.selected;
       state.view = 'part';
@@ -393,12 +446,13 @@
   for (const tab of pageTabs) tab.addEventListener('click', () => switchPage(tab.dataset.page));
   bindTabKeys(byId('sheets-nav'), pageTabs);
   bindTabKeys(byId('group-tabs'), groupTabs);
+  narrow.addEventListener('change', () => render());
   window.addEventListener('resize', () => {
     if (state.page === 'assembly') revealTab(byId(`node-${state.group}`));
   });
   byId('to-register').addEventListener('click', event => {
     event.preventDefault();
-    if (state.selected) focusPassport();
+    if (state.selected) openRecordFromDrawing(event.currentTarget);
     else {
       byId('register').scrollIntoView({block: 'start'});
       byId('part-search').focus({preventScroll: true});
@@ -406,7 +460,11 @@
   });
   byId('picked-caption').addEventListener('click', event => {
     event.preventDefault();
-    focusPassport();
+    openRecordFromDrawing(event.currentTarget);
+  });
+  byId('to-drawing').addEventListener('click', event => {
+    event.preventDefault();
+    backToDrawing();
   });
   byId('assembly').addEventListener('click', event => {
     const button = event.target.closest('button');
@@ -446,15 +504,30 @@
       byId('part-search').focus();
     } else if (event.key === 'Escape' && !typing) {
       if (state.isolated) toggleIsolation();
-      else if (state.selected) closePassport(true);
-      else if (state.serviceStep) setStep(null);
+      else if (state.selected) {
+        const keepDrawing = narrow.matches && byId('drawing').contains(document.activeElement);
+        closePassport(!keepDrawing);
+        if (keepDrawing) byId('drawing').focus({preventScroll: true});
+      } else if (state.serviceStep) setStep(null);
     }
   });
 
   const returnScrollY = restoreLocaleContext();
-  window.AtlasUI = Object.freeze({getState: snapshot});
+  function visitGroupFragment() {
+    // The desktop tab strip is replaced by a select on phones. Its individual
+    // #node-* links still need a visible destination (including on first load).
+    if (!narrow.matches || !location.hash.startsWith('#node-')) return;
+    const id = location.hash.slice('#node-'.length);
+    if (!groupIndex.has(id)) return;
+    switchPage('assembly');
+    switchGroup(id, true);
+    byId('drawing').scrollIntoView({block: 'start'});
+  }
+  window.addEventListener('hashchange', visitGroupFragment);
+  window.AtlasUI = Object.freeze({getState: snapshot, getOrbit: drawing.captureOrbit});
   render();
   document.documentElement.dataset.uiReady = 'true';
   window.dispatchEvent(new CustomEvent('atlas:ready', {detail: snapshot()}));
-  restoreScrollAfter(drawing.start(), returnScrollY);
+  if (returnScrollY === null) visitGroupFragment();
+  restoreScrollAfter(window.AtlasStudioMotion.startViewer(drawing.start), returnScrollY);
 })();

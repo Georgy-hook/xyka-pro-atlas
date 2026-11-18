@@ -1,4 +1,4 @@
-/* Classic entry point: load vendor/three-atlas.js first. No fetch of model files. */
+/* Load vendor/three-atlas.js and viewport-touch.js first. No fetch of model files. */
 (() => {
   'use strict';
 
@@ -18,6 +18,7 @@
     Mounts: [0.72, 0.53, 1],
   };
   const upright = [0, 1, 0];
+  const minFitMeasure = 0.000002;  // metres; the smallest valid fitted frustum
   const fixedViews = {
     front: { eye: [0, 0, 1], up: upright },
     back: { eye: [0, 0, -1], up: upright },
@@ -416,7 +417,7 @@
     const spanY = parallel ? 0.5 * 0.84 : Math.tan(camera.fov * Math.PI / 360) * 0.84;
     const spanX = spanY * aspect;
     const corner = new T.Vector3();
-    let distance = 0.000002;
+    let distance = minFitMeasure;
     for (const { min, max } of boxes) {
       for (let i = 0; i < 8; i++) {
         corner.set(i & 1 ? max.x : min.x, i & 2 ? max.y : min.y, i & 4 ? max.z : min.z).sub(center);
@@ -431,9 +432,30 @@
     return distance;
   }
 
-  function bindPicking(T, canvas, activeCamera, model, visibleMeshes, screen, onHit) {
+  function makePicker(T, canvas, activeCamera, model, visibleMeshes, screen, onHit) {
     const ray = new T.Raycaster();
     const cursor = new T.Vector2();
+    return event => {
+      const rect = canvas.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      cursor.set(2 * (event.clientX - rect.left) / rect.width - 1, 1 - 2 * (event.clientY - rect.top) / rect.height);
+      const camera = activeCamera();
+      camera.updateMatrixWorld();
+      ray.setFromCamera(cursor, camera);
+      const hits = ray.intersectObjects(visibleMeshes(), false);
+      if (!hits.length) return;
+      let id = model.owner.get(hits[0].object);
+      // Only a lit stroke seen through the registered cover targets the underlying LCD.
+      // The off state, dark surround and a removed window all pick the nearest part.
+      if (screen && id === screen.windowId) {
+        const behind = hits.find(hit => model.owner.get(hit.object) !== id);
+        if (screen.isLitHit(behind, ray.ray)) id = screen.carrier.id;
+      }
+      onHit(id, {pointerType: event.pointerType});
+    };
+  }
+
+  function bindMousePicking(canvas, pick) {
     let press = null;
     function down(event) {
       if (press || !event.isPrimary || event.button !== 0 || event.shiftKey || event.ctrlKey || event.metaKey) {
@@ -453,22 +475,7 @@
       move(event);
       if (!press) return;
       press = null;
-      const rect = canvas.getBoundingClientRect();
-      if (!rect.width || !rect.height) return;
-      cursor.set(2 * (event.clientX - rect.left) / rect.width - 1, 1 - 2 * (event.clientY - rect.top) / rect.height);
-      const camera = activeCamera();
-      camera.updateMatrixWorld();
-      ray.setFromCamera(cursor, camera);
-      const hits = ray.intersectObjects(visibleMeshes(), false);
-      if (!hits.length) return;
-      let id = model.owner.get(hits[0].object);
-      // Only a lit stroke seen through the registered cover targets the underlying LCD.
-      // The off state, dark surround and a removed window all pick the nearest part.
-      if (screen && id === screen.windowId) {
-        const behind = hits.find(hit => model.owner.get(hit.object) !== id);
-        if (screen.isLitHit(behind, ray.ray)) id = screen.carrier.id;
-      }
-      onHit(id);
+      pick(event);
     }
     const events = { pointerdown: down, pointermove: move, pointerup: up, pointercancel: cancel, lostpointercapture: cancel };
     for (const [type, listener] of Object.entries(events)) canvas.addEventListener(type, listener);
@@ -531,6 +538,7 @@
       const orthographic = studio.orthographic;
       let camera;
       let controls;
+      let touchInput;
       let parallelHeight = 0.18;
       const { cursor, touchAction } = canvas.style;
 
@@ -551,6 +559,7 @@
       let width = 0;
       let height = 0;
       let pixelRatio = 0;
+      let touchMoving = false;
 
       function draw() {
         frame = 0;
@@ -637,6 +646,7 @@
       }
       function aim(direction, scope = 'visible') {
         if (disposed || !visible.length) return;
+        touchInput?.reset();
         const detail = scope === 'part' && model.parts.get(selected);
         const boxes = detail && detail.node.visible ? [detail.box] : visible.map(part => part.box);
         const pivot = boxes.length === 1 ? boxes[0].getCenter(new T.Vector3()) : center;
@@ -671,20 +681,31 @@
       function bestEye() {
         return model.parts.get(isolated)?.eye || groupEye[group] || assemblyEye;
       }
+      function updateBuffer(sizeChanged = false) {
+        if (disposed || !width || !height) return;
+        // Render a moving finger gesture at up to one device pixel per CSS pixel.
+        // Lift/cancel restores the original still-image quality, without refitting.
+        const dpr = Math.min(window.devicePixelRatio || 1, touchMoving ? 1 : 2,
+          Math.sqrt(4000000 / (width * height)));
+        if (!sizeChanged && dpr === pixelRatio) return;
+        pixelRatio = dpr;
+        renderer.setDrawingBufferSize(width, height, pixelRatio);
+        invalidate();
+      }
       function resize() {
         const rect = canvas.getBoundingClientRect();
         const w = Math.round(rect.width);
         const h = Math.round(rect.height);
-        const dpr = Math.min(window.devicePixelRatio || 1, 2, Math.sqrt(4000000 / Math.max(1, w * h)));
-        if (w === width && h === height && dpr === pixelRatio) return;
-        width = w;
-        height = h;
-        pixelRatio = dpr;
-        if (!width || !height) return;
-        renderer.setDrawingBufferSize(width, height, pixelRatio);
-        updateProjection();
-        if (fitScope) aim(null, fitScope);
-        invalidate();
+        const sizeChanged = w !== width || h !== height;
+        if (sizeChanged) {
+          touchInput?.reset();
+          width = w;
+          height = h;
+          if (!width || !height) return;
+          updateProjection();
+          if (fitScope) aim(null, fitScope);
+        }
+        updateBuffer(sizeChanged);
       }
       const resizeObserver = new ResizeObserver(resize);
       resizeObserver.observe(canvas);
@@ -725,13 +746,104 @@
         finishes.clear();
         offsets.clear();
       });
-      cleanup.push(bindPicking(T, canvas, () => camera, model, () => pickable, screen, id => {
+      function turnBy(yawDegrees) {
+        if (disposed || !Number.isFinite(yawDegrees) || !yawDegrees) return;
+        // Positive yaw orbits the EYE right about this projection's up axis.
+        const degrees = Math.max(-180, Math.min(180, yawDegrees));
+        controls.rotateLeft(-degrees * Math.PI / 180);
+      }
+      function zoomBy(scale) {
+        if (disposed || !Number.isFinite(scale) || scale <= 0 || scale === 1) return;
+        // The public r187 dolly scales distance (perspective) or inverse zoom (ortho).
+        // Its distance/zoom limits still apply; no cursor or centroid changes the pivot.
+        controls.dollyIn(1 / scale);
+      }
+
+      // A language handoff is one-shot. Fingerprint the current service offsets only
+      // on capture/restore; don't serialize hundreds of vectors or observe every orbit.
+      function orbitScope() {
+        let pose = 2166136261;
+        for (const id of [...offsets.keys()].sort()) {
+          for (const c of JSON.stringify([id, ...offsets.get(id).toArray()])) {
+            pose = Math.imul(pose ^ c.charCodeAt(0), 16777619);
+          }
+        }
+        return JSON.stringify([data.sourceSHA256, group, isolated, selected, explode, offsets.size, pose >>> 0]);
+      }
+
+      function captureOrbit() {
+        if (disposed || lost || !visible.length || !data.sourceSHA256) return null;
+        const parallel = camera === orthographic;
+        return {
+          v: 1, scope: orbitScope(), projection: parallel ? 'orthographic' : 'perspective',
+          position: camera.position.toArray(), target: controls.target.toArray(), up: camera.up.toArray(),
+          zoom: camera.zoom, ...(parallel ? {parallelHeight} : {}), fit: fitScope,
+        };
+      }
+
+      function restoreOrbit(view) {
+        if (disposed || lost || !visible.length || !data.sourceSHA256) return false;
+        if (view?.v !== 1 || view.scope !== orbitScope()) return false;
+        const parallel = view.projection === 'orthographic';
+        if (!parallel && view.projection !== 'perspective') return false;
+        const next = parallel ? orthographic : perspective;
+        const vector = v => Array.isArray(v) && v.length === 3 && [v[0], v[1], v[2]].every(Number.isFinite);
+        if (!vector(view.position) || !vector(view.target) || !vector(view.up)) return false;
+        const axes = parallel ? [upright, fixedViews.top.up, fixedViews.bottom.up] : [upright];
+        const up = axes.find(axis => axis.every((n, i) => n === view.up[i]));
+        if (!up || ![null, 'visible', 'part'].includes(view.fit) || !Number.isFinite(view.zoom) ||
+            view.zoom < controls.minZoom || view.zoom > controls.maxZoom || (next === perspective && view.zoom !== 1)) return false;
+        const position = new T.Vector3(...view.position);
+        const target = new T.Vector3(...view.target);
+        const distance = position.distanceTo(target);
+        const limit = Math.max(64 * radius, controls.maxDistance);
+        if (distance < controls.minDistance * 0.999999 || distance > limit || target.distanceTo(center) > 4 * limit) return false;
+        if (parallel && (!Number.isFinite(view.parallelHeight) || view.parallelHeight < minFitMeasure ||
+            view.parallelHeight > limit)) return false;
+
+        // Only after validation: restore this camera, NOT group/selection/explosion.
+        const maxDistance = Math.max(controls.maxDistance, distance);
+        touchInput.reset();
+        useCamera(next, up);
+        controls.maxDistance = maxDistance;
+        controls.target.copy(target);
+        camera.position.copy(position);
+        camera.zoom = view.zoom;
+        if (parallel) parallelHeight = view.parallelHeight;
+        updateProjection();
+        controls.update();
+        fitScope = view.fit;
+        invalidate();
+        return true;
+      }
+
+      const pick = makePicker(T, canvas, () => camera, model, () => pickable, screen, (id, meta) => {
         select(id);
-        callbacks.onPick?.(id);
-      }));
+        callbacks.onPick?.(id, meta);
+      });
+      cleanup.push(bindMousePicking(canvas, pick));
+      touchInput = window.AtlasViewportTouch.bind(canvas, {
+        pick,
+        orbit(dx, dy) {
+          // Half a turn across the shorter canvas side. Equal diagonal deltas get
+          // equal angular gain, in CSS pixels rather than drawing-buffer pixels.
+          const gain = Math.PI / Math.max(1, Math.min(width, height));
+          if (dx) controls.rotateLeft(dx * gain);
+          if (dy) controls.rotateUp(dy * gain);
+        },
+        magnification: () => camera.isOrthographicCamera ? camera.zoom : 1 / controls.getDistance(),
+        zoomBy,
+        setMoving(moving) {
+          if (moving === touchMoving) return;
+          touchMoving = moving;
+          updateBuffer();
+        },
+      });
+      cleanup.push(() => touchInput.dispose());
       function contextLost(event) {
         event.preventDefault();
         lost = true;
+        touchInput.reset();
         callbacks.onError?.('Потерян контекст WebGL. Каталог деталей остаётся доступен.');
       }
       function contextRestored() {
@@ -786,6 +898,10 @@
         },
         setScreenOn,
         select,
+        turnBy,
+        zoomBy,
+        captureOrbit,
+        restoreOrbit,
         isolate(id) {
           if (disposed || (id != null && !model.parts.has(id))) return;
           isolated = id ?? null;

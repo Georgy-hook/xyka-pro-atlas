@@ -1,0 +1,148 @@
+/* A single studio cue: the registered contours resolve into the finished housing.
+   Nothing on the landing page waits for the WebGL viewer, an animation or a scroll. */
+.product-visual {
+  position: relative;
+  isolation: isolate;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+}
+
+#product-image,
+.product-visual .finish-outgoing {
+  grid-area: 1 / 1;
+}
+
+.product-visual .finish-outgoing {
+  z-index: 2;
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.hero-inspect-link {
+  display: none;
+}
+
+@media (pointer: coarse), (max-width: 680px) {
+  html:not([data-viewport-state='fallback']) .hero-inspect-link {
+    position: absolute;
+    z-index: 3;
+    inset: 0;
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-end;
+    padding: 0 2px 8px;
+    text-decoration: none;
+    pointer-events: auto;
+    /* This is a link to the real canvas, not another gesture surface. */
+    touch-action: manipulation;
+  }
+
+  .hero-inspect-link span {
+    padding: 6px 10px;
+    border: 1px solid #ffffff38;
+    border-radius: 24px;
+    background: #15171bea;
+    color: #e7e8ed;
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  .hero-inspect-link:focus-visible {
+    outline-offset: -2px;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .product {
+    --studio-ease: cubic-bezier(.22, .72, .16, 1);
+    --studio-beat: 1420ms;
+  }
+
+  :root:not([data-studio-seen], [data-locale-handoff='true']) .product-visual {
+    animation: studio-settle var(--studio-beat) var(--studio-ease) both;
+  }
+
+  :root:not([data-studio-seen], [data-locale-handoff='true']) .product-visual::after {
+    content: '';
+    grid-area: 1 / 1;
+    z-index: 1;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    background: url('media/hero-contour.svg') center / contain no-repeat;
+    /* Keep the SVG a background so local file:// origins can paint it, too. */
+    -webkit-mask-image: linear-gradient(to bottom, #000 43%, transparent 57%);
+    mask-image: linear-gradient(to bottom, #000 43%, transparent 57%);
+    -webkit-mask-size: 100% 250%;
+    mask-size: 100% 250%;
+    pointer-events: none;
+    animation: studio-drawing var(--studio-beat) cubic-bezier(.32, .05, .24, 1) both;
+  }
+
+  :root:not([data-studio-seen], [data-locale-handoff='true']) #product-image {
+    animation: studio-finish-in var(--studio-beat) var(--studio-ease) both;
+  }
+
+  :root:not([data-studio-seen], [data-locale-handoff='true']) :is(.product-kicker, #product-title, .product-intro, .product-actions) {
+    animation: studio-copy 620ms var(--studio-ease) backwards;
+  }
+
+  .product #product-title { animation-delay: 45ms; }
+  .product .product-intro { animation-delay: 95ms; }
+  .product .product-actions { animation-delay: 140ms; }
+
+  .product-chip::before,
+  .product-actions a [aria-hidden='true'] {
+    transition: transform 180ms var(--studio-ease);
+  }
+
+  .product-chip:active::before { transform: scale(.9); }
+  .product-actions a:active [aria-hidden='true'] { transform: translateX(2px); }
+
+  @media (hover: hover) {
+    .product-actions a:hover [aria-hidden='true'] { transform: translateX(3px); }
+    .product-chip:hover::before { transform: scale(1.09); }
+  }
+}
+
+@keyframes studio-settle {
+  from { transform: translate3d(0, 16px, 0) rotate(-2.4deg) scale(.968); }
+  to { transform: none; }
+}
+
+@keyframes studio-finish-in {
+  0%, 13% { opacity: .24; }
+  74%, 100% { opacity: 1; }
+}
+
+@keyframes studio-drawing {
+  0% {
+    opacity: .66;
+    -webkit-mask-position: 0 0%;
+    mask-position: 0 0%;
+  }
+  20% {
+    opacity: .97;
+    -webkit-mask-position: 0 0%;
+    mask-position: 0 0%;
+  }
+  88%, 100% {
+    opacity: 0;
+    -webkit-mask-position: 0 100%;
+    mask-position: 0 100%;
+  }
+}
+
+@keyframes studio-copy {
+  from {
+    opacity: .72;
+    transform: translateY(9px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}

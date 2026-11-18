@@ -22,6 +22,10 @@
   gap: 12px;
 }
 
+.model-return {
+  display: none;
+}
+
 .reg-heading,
 .passport-nav {
   min-height: 48px;
@@ -323,8 +327,9 @@
   }
 }
 
-@media (max-width: 780px) {
+@media (max-width: 780px), (pointer: coarse) and (max-width: 1024px) {
   .reg-column {
+    contain: none;
     margin-top: 12px;
     border-top: 1px solid var(--line);
     padding-top: 18px;
@@ -333,16 +338,44 @@
 
   .reg-pane {
     position: static;
+    height: auto;
   }
 
   .parts-scroll {
     flex: none;
-    max-height: min(76svh, 710px);
+    max-height: min(65svh, 630px);
     overscroll-behavior-block: auto;
   }
 
   .passport-scroll {
     overflow: visible;
     padding-right: 0;
+  }
+
+  .passport-nav {
+    justify-content: start;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+  }
+
+  .model-return {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+    padding-inline: 12px;
+    border-radius: 10px;
+    background: var(--ink);
+    color: var(--paper);
+    text-decoration: none;
+    font: 550 14px/1.35 var(--sans);
+  }
+
+  .model-return img {
+    filter: invert(1);
+  }
+
+  #passport-number {
+    margin-inline-start: auto;
   }
 }
