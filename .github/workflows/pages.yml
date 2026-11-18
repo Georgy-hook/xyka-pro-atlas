@@ -1,0 +1,98 @@
+name: Deploy released atlas to Pages
+
+# Dispatch after publication. Release events run on tags, not the main branch.
+"on":
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Download the latest published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)
+          echo "Downloading atlas and checksums from release $tag"
+          gh release download --repo "$GITHUB_REPOSITORY" \
+            --pattern XYKA_PRO_A43_Studio.zip --pattern SHA256SUMS.txt -- "$tag"
+
+      - name: Verify the studio ZIP against that release
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Ex '[[:xdigit:]]{64} [ *]XYKA_PRO_A43_Studio\.zip' SHA256SUMS.txt |
+            sha256sum -c -
+
+      - name: Stage the atlas and its four sibling files
+        shell: python
+        run: |
+          from pathlib import Path
+          import stat
+          from zipfile import ZipFile
+
+          siblings = {
+              'XKAH_PRO_A43_rebuilt.FCStd', 'XKAH_PRO_A43_rebuilt.step',
+              'XKAH_PRO_A43_drawings.pdf', 'XKAH_PRO_A43_assembly_assembled.png',
+          }
+          required = siblings | {
+              'atlas/index.html', 'atlas/data/atlas.glb', 'atlas/data/scene.js',
+              'atlas/evidence.js', 'atlas/vendor/three-atlas.js',
+          }
+          site = Path('_site')
+          site.mkdir()
+          with ZipFile('XYKA_PRO_A43_Studio.zip') as archive:
+              for member in archive.infolist():
+                  name = member.filename
+                  if member.is_dir() or (name not in siblings and not name.startswith('atlas/')):
+                      continue
+                  if '\\' in name or any(p.startswith('.') or p in ('', 'private', 'private-inputs')
+                                         for p in name.split('/')):
+                      raise SystemExit(f'Unsafe site path: {name!r}')
+                  if stat.S_ISLNK(member.external_attr >> 16) or not member.file_size or (site / name).exists():
+                      raise SystemExit(f'Expected a single nonempty regular file: {name!r}')
+                  archive.extract(member, site)
+                  required.discard(name)
+
+          if required:
+              raise SystemExit('Missing release files: ' + ', '.join(sorted(required)))
+          (site / 'index.html').write_text('''<!doctype html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <title>Inside XYKA PRO · Teardown Atlas</title>
+            <meta http-equiv="refresh" content="0; url=./atlas/">
+          </head>
+          <body><p><a href="./atlas/">Open the XYKA PRO teardown atlas</a></p></body>
+          </html>
+          ''', encoding='utf-8')
+
+      - name: Upload the staged site
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

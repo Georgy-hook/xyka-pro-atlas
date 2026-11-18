@@ -4,9 +4,9 @@
 
 Choose Graphite, Silver, Blue or Pink. Then lift out the battery, separate the two halves and open the steel pod to reveal its mesh. This independent reconstruction of the XKAH / XYKA PRO puts **660 selectable parts** and **13 teardown stages** in your browser.
 
-**[Download the offline atlas](https://github.com/Georgy-hook/xyka-pro-atlas/releases/latest/download/XYKA_PRO_A43_Studio.zip)** · [FreeCAD assembly](https://github.com/Georgy-hook/xyka-pro-atlas/releases/latest/download/XKAH_PRO_A43_rebuilt.FCStd) · [31-sheet drawing set (PDF)](https://github.com/Georgy-hook/xyka-pro-atlas/releases/latest/download/XKAH_PRO_A43_drawings.pdf)
+**[Launch the 3D atlas](https://georgy-hook.github.io/xyka-pro-atlas/)** · [Download the offline studio](https://github.com/Georgy-hook/xyka-pro-atlas/releases/latest/download/XYKA_PRO_A43_Studio.zip)
 
-Unzip the atlas and open `atlas/index.html`. The viewer, finishes and model all work offline.
+Explore online, or unzip the studio and open `atlas/index.html` to take it offline.
 
 ![Studio view of the XYKA PRO in Graphite](docs/screenshots/atlas-assembly.png)
 
@@ -14,4 +14,6 @@ Select a component in 3D to see its name, dimensions and source. Take the same a
 
 ![Component-side view of the A4.3 mainboard in the atlas](docs/screenshots/atlas-mainboard.png)
 
-[Engineering notes and sources](docs/engineering.ru.md) · Original viewer and CAD tools: [MIT](LICENSE). Third-party notices: [Three.js](atlas/vendor/three-LICENSE.txt), [noUiSlider and Tabler Icons](atlas/vendor/ui-LICENSES.md), [osifont](docs/licenses/osifont.txt). XKAH and XYKA are product identifiers.
+[FreeCAD assembly](https://github.com/Georgy-hook/xyka-pro-atlas/releases/latest/download/XKAH_PRO_A43_rebuilt.FCStd) · [31-sheet drawing set (PDF)](https://github.com/Georgy-hook/xyka-pro-atlas/releases/latest/download/XKAH_PRO_A43_drawings.pdf) · [Engineering notes and sources](docs/engineering.ru.md)
+
+Original viewer and CAD tools: [MIT](LICENSE). Third-party notices: [Three.js](atlas/vendor/three-LICENSE.txt), [noUiSlider and Tabler Icons](atlas/vendor/ui-LICENSES.md), [osifont](docs/licenses/osifont.txt). XKAH and XYKA are product identifiers.
