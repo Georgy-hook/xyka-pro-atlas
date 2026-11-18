@@ -161,14 +161,71 @@ def roll_mask():
     return Part.Face(Part.Wire(edges)).extrude(V(108, 0, 0))
 
 
+def _crown_cheeks():
+    """Short side returns of the transverse lip, seen on both side views.
+
+    Do not carry the broad U fairing up the side of the light band: it would
+    shutter the front half of an otherwise correct pale ring. Only the upper
+    7 mm of the nose is limited here; the cover and its carrier stay intact.
+    """
+    # Independent planar tooling faces: cutting the sculpted B-spline nose by
+    # another long B-spline cheek creates unorientable trim curves under native
+    # unequal W/D/H scaling. The retail lip here is a short, almost straight bar.
+    outline = [(-19.75, 3.0), (19.75, 3.0), (20.88, 8.1), (20.88, 13.4),
+               (21.28, 27.8), (21.16, 28.0), (-21.16, 28.0), (-21.28, 27.8),
+               (-20.88, 13.4), (-20.88, 8.1)]
+    plan = polygon([V(x, y, BODY_TOP - .05) for x, y in outline])
+    return Part.Face(plan).extrude(V(0, 0, CAP_TOP - BODY_TOP + .10))
+
+
 def crown_and_bridge(nose):
+    # Heights and radial setbacks read separately on the rear US7 / side US5:
+    # ~24 px light at a local 9.4..9.8 px/mm; dark recessed neck above it.
+    # The top radial ink/grooves belong to the removable pack, not this rim.
+    from mech_shapes import turned
+
     mask = roll_mask()
-    crown_blank = circle(31.76, 2.70, 0, CY, 150.83)
-    tongue = nose.common(z_box(150.83, 2.70)).common(mask)
-    crown = crown_blank.fuse(tongue).cut(circle(25.10, 5.0, 0, CY, 149.8)).removeSplitter()
-    # Geometry below the crown face: no through-slit at the side; not a solid
-    # disk at ring height. Leave the indicator ring and both light routes free.
-    sleeve = nose.common(z_box(BODY_TOP+.01, 150.83-BODY_TOP-.01)).common(mask)
-    sleeve = sleeve.cut(circle(31.03, 6, 0, CY, 146))
+    cup = _crown_cheeks()
+    cap_floor = 151.43
+    crown_blank = turned([(25.10, cap_floor), (29.96, cap_floor),
+                          (30.25, cap_floor+.20), (30.25, CAP_TOP-.37),
+                          (30.16, CAP_TOP-.12), (29.94, CAP_TOP), (25.10, CAP_TOP)], CY)
+    tongue = cup.common(z_box(cap_floor, CAP_TOP - cap_floor)).common(mask)
+    crown = crown_blank.fuse(tongue).cut(circle(25.10, 5., 0, CY, 149.0))
+    # Return underneath the cap into the shadow band. The inner lip underlaps
+    # only the mouth; its ID is relieved for removal of the pack. An accidental
+    # line of sight to the RGB wires is not a feature of the retail end view.
+    # The dark shoulder rests on the upper annular face of the diffuser, not
+    # suspended above its narrower neck. It leaves the outer light band free.
+    collar = turned([(24.18, 149.42), (27.97, 149.42), (28.02, 149.47),
+                     (27.94, 149.55), (26.59, 149.69), (26.48, 149.84),
+                     (26.58, 151.19), (26.84, 151.46), (25.04, 151.58),
+                     (24.72, 151.50), (24.65, 150.92), (24.18, 150.50)], CY)
+    crown = crown.fuse(collar).removeSplitter()
+    sleeve = cup.common(z_box(BODY_TOP+.01, cap_floor-BODY_TOP-.01)).common(mask)
+    # The top overlaps the larger crown, but below it the panel returns stop
+    # at this shallow chord. Leaving the full upper tongue here masks the pale
+    # side strip for another ~5 mm in both side elevations.
+    short_return = Part.makeBox(92., 52.95, cap_floor - BODY_TOP + .2, V(-46, -30, BODY_TOP))
+    sleeve = sleeve.common(short_return)
+    # Round return towards the dark neck follows the diffuser instead of the
+    # old vertical cylinder all the way to the lid. Keep the local front wire
+    # path, optical carrier and screw seats in front of this return clear.
+    sleeve = sleeve.cut(circle(29.02, 8.2, 0, CY, 145.50))
     rebate = in_cassette(Part.Face(u_wire(-2.0, 40.7, 62.8, COVER_END+.045)).extrude(V(0, 2.95, 0)))
     return crown, sleeve.cut(rebate).removeSplitter()
+
+
+def retail_diffuser():
+    """Pale indicator band only, not another LED or an open window."""
+    from mech_shapes import turned
+
+    # Bevel the inner lower rim clear of the *existing* optical lead ends;
+    # do not move the four independent wires to suit the new outer diameter.
+    band = turned([(28.17, 146.60), (28.46, 146.60), (28.48, 146.71), (28.69, 146.91),
+                   (28.69, 149.16), (28.55, 149.42), (27.02, 149.42),
+                   (27.05, 147.44), (28.06, 147.03)], CY)
+    # Only the outermost RGB jacket crowds this inside corner. The rounded
+    # relief is over the open cable portal, clear of the deck and crown seats.
+    lead_relief = Part.makeSphere(1.05, V(-5.70, CY - 26.80, 146.25))
+    return band.cut(lead_relief).removeSplitter()

@@ -19,8 +19,12 @@ import FreeCAD as App
 import Part
 
 from mech_case import housing
-from mech_modules import base_interface, battery, chamber, heater
-from mech_mounts import board_carrier, closure, external_keys, hinge, rim_hardware
+from mech_modules import base_interface
+from mech_mounts import board_carrier, closure, external_keys, hinge
+from retail_battery import battery
+from retail_clips import rim_hardware
+from retail_clips_base import add_service_base
+from retail_pod import chamber, heater
 from mech_shapes import MAN, OPEN_PHOTO, PACK_PHOTO, PHOTO, PODS, RETAIL, US_FAMILY, WO1, WO5, XYKA
 
 
@@ -36,7 +40,7 @@ PARAMS = [
     ('UiBase', 77.0, MAN+' p.04 c,d,e; IMG_8917/8918. Lower UI board edge, height along inclined cassette.', 5.0),
     ('UiDepth', 3.5, 'IMG_8917, IMG_8918, IMG_8919: inward distance along panel normal to UI soldermask, not global Y.', .65),
     ('BatteryOD', 45.4, MAN+' pp.03–04 iii,a; '+PACK_PHOTO+'; whole cartridge outer envelope only.', 3.3),
-    ('BatteryL', 86.0, MAN+' p.03 iii; '+WO1+' Figs.8–12; cap-to-base envelope of a removable pack, internals unknown.', 8.0),
+    ('BatteryL', 80.0, 'https://xyka.pro/akkumulyator-xyka ; '+MAN+' p.03 iii. Axial envelope excluding the loose cable, estimated L/OD ≈1.77–1.82 in side views; no physical measurement.', 8.0),
     ('PodOD', 42.0, PODS+' retailer replacement pod, width 42 mm; not measured on owner unit.', 1.6),
     ('PodH', 23.3, PODS+' replacement pod height 23.3 mm; '+OPEN_PHOTO+'; revision fit unknown.', 1.3),
     ('HeatFaceD', 45.8, OPEN_PHOTO+' plate-to-pod apparent width; '+WO5+' Figs.3–8. Heater and sheet are an estimate.', 4.0),
@@ -56,6 +60,7 @@ def build(c):
     hinge(c, upper, lower, outer)
     closure(c, upper, lower)
     base_interface(c, lower)
+    add_service_base(c, upper)
     battery(c, upper)
     chamber(c, lower)
     heater(c)

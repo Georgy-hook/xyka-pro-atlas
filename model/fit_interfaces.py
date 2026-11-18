@@ -8,6 +8,9 @@ import Part
 
 from fit_geometry import EPS, bounds, box_gap, exact_gap, unit, vec, world, xyz
 from fit_frames import Frame
+from fit_removables import keyed_pack_seat
+from fit_service import FACE_SITES, FaceAccess, base_fixings, head_seat, retail
+from fit_window import retail_window
 
 LOWER = ('B+', 'B-', 'F+', 'F-', 'Clear1', 'Clear2', 'GND', 'KEY+', 'S-', 'S+')
 UPPER = ('RGB1', 'RGB2', 'RGB3', 'RGB4')
@@ -160,6 +163,8 @@ def anchors(leaves, emit):
 
 
 def window(leaves, emit):
+    if retail(leaves) or 'MechCoverWindow' in leaves:
+        return retail_window(leaves, emit)
     glass = leaves.get('UiGlass')
     cover = next((leaves[n] for n in ('MechServiceCover', 'FaceCassette') if n in leaves), None)
     if glass is None or cover is None:
@@ -265,9 +270,9 @@ def mounts(leaves, boards, emit):
         else:
             emit('REVIEW', 'display seat', seat.name, rim.name, detail='Cap or plated bore missing at mid-plane')
         pairs.append((seat, rim))
-    # Rims on the housing are not PCB holes. Only the two upper ears have a
-    # registered illustrated fastener. Inspect three sections along each bore.
-    for suffix in ('TopL', 'TopR', 'SideR', 'Foot'):
+    # Keep PCB holes, fascia screws and the two opposed internal screw families separate.
+    access = FaceAccess(leaves, emit) if retail(leaves) else None
+    for suffix in FACE_SITES if access else ('TopL', 'TopR', 'SideR', 'Foot'):
         ear = leaves.get('MechPanelEar' + suffix)
         screw = leaves.get('MechServiceScrew' + suffix)
         if ear is None:
@@ -282,14 +287,22 @@ def mounts(leaves, boards, emit):
             continue
         hole, rh = min(ear_loops, key=lambda s: s[1])
         if screw is None:
-            emit('OPEN_BORE', 'case ear', ear.name, point=frame.point(hole), metric='open radius mm', value=rh,
+            emit('MISSED_CAPTURE' if access else 'OPEN_BORE', 'case ear', ear.name, point=frame.point(hole), metric='open radius mm', value=rh,
                  detail='Visible case ear; no fastener material paired. Not a PCB bore.')
             continue
         pairs.append((screw, ear))
+        if access:
+            access.measure(frame, lug, hole, rh, ear, screw, emit)
+            if 'MechKeyCarrier' in leaves:
+                head_seat(frame, screw, leaves['MechKeyCarrier'], access.inward, emit)
+                pairs.append((screw, leaves['MechKeyCarrier']))
         pin = frame.solid(screw)
-        ys = np.linspace(lug.box[0, 1] + .05, lug.box[1, 1] - .05, 3)
-        measured = [circle_sections(pin, 1, y) for y in ys]
-        if not all(measured):
+        # A seated screw may end inside a deeper bore. Inspect the actual common
+        # axial interval, while also checking the head recess and the empty ear.
+        lo = max(lug.box[0, 1], pin.box[0, 1])
+        hi = min(lug.box[1, 1], pin.box[1, 1])
+        measured = [circle_sections(pin, 1, lo + t * (hi - lo)) for t in (.05, .5, .95)] if hi - lo > EPS else []
+        if not measured or not all(measured):
             q = pin.box.mean(axis=0)
             delta = hole - q
             emit('MISSED_CAPTURE', 'service screw / ear', screw.name, ear.name, frame.point(q), frame.direction(unit(delta)),
@@ -304,7 +317,64 @@ def mounts(leaves, boards, emit):
         margin, point, delta, rad = min(margins, key=lambda m: m[0])
         emit('CAPTURED' if margin >= -EPS else 'RADIAL_CLASH', 'service screw / ear', screw.name, ear.name,
              frame.point(point), frame.direction(unit(delta)), 'radial margin mm', margin,
-             detail=f'Three circular shank sections along bore. R(ear)={rh:.3f}, limiting shank R={rad:.3f} mm; no thread or torque claim.')
+             detail=f'Three circular shank sections over {hi-lo:.3f} mm axial engagement. R(ear)={rh:.3f}, limiting shank R={rad:.3f} mm; no thread or torque claim.')
+    pairs.extend(base_fixings(leaves, emit, circle_sections))
     if not pairs:
         emit('REVIEW', 'mount inventory', detail='No supported mount interfaces identified')
+    return pairs
+
+
+# Stable physical IDs; kept separate from module membership so the original
+# single-unit reconstruction and the removable retail pod can both be checked.
+MATE_PAIRS = (
+    ('MechBatteryEnvelope', 'MechPackWell'), ('MechPackCap', 'MechPackWell'),
+    ('MechRemovablePod', 'MechChamberInsert'), ('MechRemovablePod', 'MechPodLid'),
+    ('MechPodLid', 'MechHeatGuard'), ('MechRemovablePod', 'MechHeatGuard'),
+    ('MechHeatGuard', 'MechHeaterCarrier'),
+)
+
+
+def removable_mates(leaves, emit):
+    """Sample the body/well radial relationship, plus exact distances in the main pass.
+
+    No factory tolerance, electric contact, seal compression or thermal coupling is asserted.
+    Failure to identify the two wall radii is unresolved rather than a passing bound.
+    """
+    pairs = [(leaves[a], leaves[b]) for a, b in MATE_PAIRS if a in leaves and b in leaves]
+    pack_holder = leaves.get('MechPackWell')
+    keyed = (retail(leaves) or 'MechPackEndContacts' in leaves or
+             (pack_holder is not None and pack_holder.obj.Document.getObject('MechPackSeatAssembly') is not None))
+    if keyed:
+        keyed_pack_seat(leaves, emit)
+    for insert, receiver in ((MATE_PAIRS[2],) if keyed else (MATE_PAIRS[0], MATE_PAIRS[2])):
+        guest, host = (leaves.get(n) for n in (insert, receiver))
+        if not guest or not host:
+            emit('REVIEW', 'removable seat', insert, receiver, detail='Missing physical insert or receiving seat')
+            continue
+        frame = Frame(host.obj.Document.getObject('Assembly'))  # true assembled +Z, not the lathe sketch XY
+        inner, outer = frame.solid(guest), frame.solid(host)
+        low = max(inner.box[0, 2], outer.box[0, 2])
+        high = min(inner.box[1, 2], outer.box[1, 2])
+        if high - low <= EPS:
+            emit('MISSED_CAPTURE', 'removable seat', insert, receiver, metric='axial envelope engagement mm',
+                 value=high-low, detail='No axial engagement of installed envelope and receiver.')
+            continue
+        measured = []
+        for frac in (.25, .5, .75):
+            z = low + frac * (high - low)
+            guest_loops, host_loops = (sorted(circle_sections(s, 2, z), key=lambda t: -t[1]) for s in (inner, outer))
+            if not guest_loops or len(host_loops) < 2:
+                break
+            p, r = guest_loops[0]  # circumference of insert, not its hollow interior
+            q, bore = host_loops[1]  # inner of the two enclosing circular walls
+            delta = q - p
+            offset = np.linalg.norm(delta[:2])
+            measured.append((bore - r - offset, offset, p, delta, r, bore))
+        if len(measured) < 3:
+            emit('REVIEW', 'removable seat', insert, receiver, detail='Could not section two circular receiver walls at all three installed heights')
+            continue
+        margin, offset, point, delta, ro, ri = min(measured, key=lambda entry: entry[0])
+        emit('CAPTURED' if margin >= -EPS else 'RADIAL_CLASH', 'removable seat', insert, receiver,
+             frame.point(point), frame.direction(unit(delta)), 'limiting sampled radial margin mm', margin,
+             detail=f'25/50/75% of {high-low:.3f} mm axial engagement. R(insert/bore)={ro:.4f}/{ri:.4f}, eccentricity={offset:.4f} mm. Separate material distance/common; not a factory fit.')
     return pairs

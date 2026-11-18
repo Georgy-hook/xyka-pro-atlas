@@ -19,6 +19,8 @@ from OCC.Core.GProp import GProp_GProps
 
 from context import world_shape
 from pack_release import checksum
+from assembly_units import GROUPS, MODULES, OUTER
+from verify_service import verify_service
 
 
 PREFIX = 'XKAH_PRO_A43_'
@@ -77,7 +79,7 @@ def fascia_profile(doc):
     require(end_faces and abs(face_normal(max(end_faces, key=lambda f: f.Area)).z) > .9999,
             'Base socket is not upright: do not tilt the entire assembly')
     shapes = [world_shape(doc.getObject(n)) for n in ('MechUpperFairing', 'MechServiceCover')]
-    for key in ('TopL', 'TopR', 'SideR', 'Foot'):
+    for key in ('TopL', 'TopR', 'SideL', 'SideR', 'Foot'):
         ear = doc.getObject('MechPanelEar' + key)
         require(len(ear.Shape.Solids) == 1, f'Disconnected mounting-ear offcut: {key}')
     height = doc.Parameters.BodyH.Value
@@ -117,16 +119,17 @@ def verify(root):
     require(all(not o.Shape.isNull() and o.Shape.isValid() for o in leaves), 'Invalid reopened BRep')
     require({x.Name for x in doc.Objects if 'EvidenceSource' in x.PropertiesList} == {x.Name for x in leaves},
             'Missing native item in manifest')
-    groups = ['Housing', 'MainPCB', 'DisplayPCB', 'Heater', 'Battery', 'Harness', 'Mounts']
+    groups = list(MODULES)
     require(all(doc.getObject(name).TypeId == 'App::Part' for name in groups), 'Missing assembly module')
     require(all(len(doc.getObject(name).Group) for name in groups), 'Empty assembly module')
     require(doc.Exploded.Visibility is False and doc.Assembly.Visibility, 'Startup visibility')
-    require(len(doc.Exploded.Group) == len(groups) and all(o.LinkedObject for o in doc.Exploded.Group),
+    require(doc.Exploded.Group and all(o.LinkedObject for o in doc.Exploded.Group),
             'Dangling exploded reference')
     report = dict(source=path.name, source_sha256=checksum(path),
                   freecad_version='.'.join(App.Version()[:3]), physical_features=len(leaves),
                   document_objects=len(doc.Objects), parameter_aliases=len(dims),
                   exploded_links=len(doc.Exploded.Group), valid_reopened_shapes=True)
+    report['service_assembly'] = verify_service(doc, leaves)
     report['installed_fascia'] = fascia_profile(doc)
     print('=== Native file reopened; assemblies, manifest, parameters and B-reps checked', flush=True)
     wires = {o.Contact: o for o in leaves if 'Contact' in o.PropertiesList and o.TypeId == 'Part::Loft'}
@@ -144,7 +147,7 @@ def verify(root):
     report['wire_anchors_and_colors'] = 14
     group_ids = {name: {obj.Name for obj in doc.getObject(name).Group + doc.getObject(name).OutListRecursive}
                  for name in groups}
-    variants = {'rebuilt': groups, 'outer_housing': ['Housing', 'Mounts'],
+    variants = {'rebuilt': groups, 'outer_housing': [GROUPS[k][0] for k in OUTER],
                 'electronics': ['MainPCB', 'DisplayPCB', 'Harness']}
     report['step_reimport'] = {}
     for suffix, selected in variants.items():

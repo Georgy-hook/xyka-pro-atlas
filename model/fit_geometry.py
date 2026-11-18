@@ -10,7 +10,9 @@ import numpy as np
 import Part
 from scipy.spatial import cKDTree
 
-GROUPS = ('Housing', 'MainPCB', 'DisplayPCB', 'Heater', 'Battery', 'Harness', 'Mounts')
+from assembly_units import LAYOUT, MODULES, UNITS
+
+LEGACY_GROUPS = ('Housing', 'MainPCB', 'DisplayPCB', 'Heater', 'Battery', 'Harness', 'Mounts')
 EPS = 1e-6  # mm; numerical coincidence only
 DEFLECTION = 0.08
 SKIN_GUARD = 0.24  # mm, screening guard, NOT a clearance requirement or proven error bound
@@ -133,30 +135,45 @@ def installed(doc):
         raise ValueError('Missing installed Assembly')
     leaves = {}
     issues = []
-    roots = {x.Name: x for x in root.Group}
-    for name in GROUPS:
-        if name not in roots:
-            issues.append(('Assembly', 'Missing direct subsystem ' + name))
+    children = {o.Name for o in root.Group}
+    # A broken retail tree with both units missing must NOT masquerade as the
+    # flat legacy model merely because none of its root child names are units.
+    retail = bool(children & set(UNITS)) or any(doc.getObject(n) is not None
+                                                for n in set(MODULES) - set(LEGACY_GROUPS))
+    required = set(MODULES if retail else LEGACY_GROUPS)
+    parents = {name: unit for _, name, _, unit, _ in LAYOUT} if retail else dict.fromkeys(required, root.Name)
+    if retail:
+        issues.extend((unit, 'Missing assembled unit') for unit in sorted(set(UNITS) - children))
+        issues.extend((o.Name, 'Installed unit must be a native App::Part') for o in root.Group
+                      if o.Name in UNITS and o.TypeId != 'App::Part')
+    stack = [(o, root.Name, None) for o in root.Group]
+    seen = set()
+    while stack:
+        obj, parent, group = stack.pop()
+        if obj.TypeId == 'App::Link':
+            issues.append((obj.Name, 'Unexpected link below installed Assembly (not counted as material)'))
+            continue  # presentation copies are never installed material
+        if obj.Name in required:
+            group = obj.Name
+            seen.add(group)
+            if parent != parents[group]:
+                issues.append((group, f'Expected below {parents[group]}, found {parent}'))
+        if not {'EvidenceSource', 'ColorHex', 'DimensionalStatus'}.issubset(obj.PropertiesList):
+            stack.extend((o, obj.Name, group) for o in getattr(obj, 'Group', []))
             continue
-        stack = list(roots[name].Group)
-        n = len(leaves)
-        while stack:
-            obj = stack.pop()
-            if obj.TypeId == 'App::Link':
-                continue
-            if not {'EvidenceSource', 'ColorHex', 'DimensionalStatus'}.issubset(obj.PropertiesList):
-                stack.extend(getattr(obj, 'Group', []))
-                continue
-            if obj.Name in leaves:
-                raise ValueError('Duplicate physical leaf: ' + obj.Name)
-            s = world(obj)
-            solids = [] if s.isNull() else [Material(sub) for sub in s.Solids]
-            if not solids:
-                issues.append((obj.Name, 'Registered leaf has no material solids'))
-            else:
-                leaves[obj.Name] = Leaf(obj.Name, name, obj, s, solids)
-        if len(leaves) == n:
-            issues.append((name, 'No registered material leaves in installed group'))
+        if obj.Name in leaves:
+            raise ValueError('Duplicate physical leaf: ' + obj.Name)
+        if group is None:
+            issues.append((obj.Name, 'Registered solid outside all installed functional modules'))
+        s = world(obj)
+        solids = [] if s.isNull() else [Material(sub) for sub in s.Solids]
+        if not solids:
+            issues.append((obj.Name, 'Registered leaf has no material solids'))
+        else:
+            leaves[obj.Name] = Leaf(obj.Name, group or 'UNASSIGNED', obj, s, solids)
+    populated = {a.group for a in leaves.values()}
+    issues.extend((name, 'Missing installed module') for name in sorted(required - seen))
+    issues.extend((name, 'Module contains no registered solids') for name in sorted(seen - populated))
     return leaves, issues
 
 
@@ -196,10 +213,33 @@ def tube_vs_solid(tube, solid):
     return solid.shape.isInside(vec(tube.centers[hit][0]), EPS, False)
 
 
-def candidate(a, b):
+class ProjectedBoxes:
+    """Second conservative broadphase in ONE rigid cassette basis for both bodies.
+
+    A raked PCB and hundreds of packages touch (or clear) within a layer only
+    much thinner than their WORLD boxes. Bound transformed native geometry, NOT
+    a rotated world AABB or the tessellation. A negative still means no bulk.
+    """
+
+    def __init__(self, datum):
+        self.inverse = datum.getGlobalPlacement().inverse()
+        self.cache = {}
+
+    def box(self, leaf, i=None):
+        key = (leaf.name, i if len(leaf.solids) > 1 else None)
+        if key not in self.cache:
+            shape = (leaf.shape if i is None else leaf.solids[i].shape).copy()
+            shape.Placement = self.inverse.multiply(shape.Placement)
+            self.cache[key] = bounds(shape, True)
+        return self.cache[key]
+
+
+def candidate(a, b, projected=None):
     """Return rejection method or the solid-index pairs selected for exact work."""
     if np.min(extents(a.box, b.box)) <= EPS:
         return 'AABB', [], None
+    if projected and np.min(extents(projected.box(a), projected.box(b))) <= EPS:
+        return 'local AABB', [], None
     hint = None
     if a.contact and b.contact and a.tube and b.tube:
         hint = tube_pair(a.tube, b.tube)
@@ -210,6 +250,8 @@ def candidate(a, b):
     for i, x in enumerate(a.solids):
         for j, y in enumerate(b.solids):
             if np.min(extents(x.box, y.box)) <= EPS:
+                continue
+            if projected and np.min(extents(projected.box(a, i), projected.box(b, j))) <= EPS:
                 continue
             if a.contact and b.contact:
                 selected.append((i, j))
@@ -245,6 +287,31 @@ def exact_gap(a, b):
         raise ValueError('No OCC distance witnesses')
     p, q = map(xyz, points[0])
     return dict(value=float(d), point=((p + q) / 2).tolist(), normal=unit(q - p))
+
+
+def split_material_gap(a, b):
+    """Exact minimum over connected native solids. Only proven box lower bounds prune.
+
+    Used for curved pack lettering against the fixed well, not for folded lofts.
+    A single distant glyph or a positive envelope bound must not stand in for the
+    closest one. Any failed competitive distance aborts the job as unresolved.
+    """
+    aa, bb = a.Solids, b.Solids
+    boxes_a = [bounds(s, True) for s in aa]
+    boxes_b = [bounds(s, True) for s in bb]
+    jobs = sorted((box_gap(x, y), i, j) for i, x in enumerate(boxes_a) for j, y in enumerate(boxes_b))
+    if not jobs:
+        raise ValueError('No connected material solids for the selected distance')
+    best = None
+    checked = 0
+    for lower, i, j in jobs:
+        if best is not None and lower >= best['value']:
+            break
+        r = exact_gap(aa[i], bb[j])
+        checked += 1
+        if best is None or r['value'] < best['value']:
+            best = dict(r, solid_a=i + 1, solid_b=j + 1)
+    return dict(best, checked=checked, possible=len(jobs))
 
 
 def material_gap(a, b):
@@ -340,7 +407,14 @@ def _worker(path, pipe):
                     if n not in cache:
                         cache[n] = world(doc.getObject(n))
                 a, b = cache[an], cache[bn]
-                result = material_gap(a, b) if mode == 'gap' else exact_common(a, b, pairs, hint)
+                if mode == 'gap':
+                    result = material_gap(a, b)
+                elif mode == 'split_gap':
+                    result = split_material_gap(a, b)
+                elif mode == 'common':
+                    result = exact_common(a, b, pairs, hint)
+                else:
+                    raise ValueError('Unknown selected BRep operation: ' + mode)
                 pipe.send((result, None))
             except Exception as ex:
                 pipe.send((None, f'{type(ex).__name__}: {ex}'))
@@ -365,7 +439,7 @@ class BoundedOCC:
             self.pipe.close()
             self.process = None
 
-    def call(self, mode, a, b, pairs=(), hint=None, remaining=None):
+    def call(self, mode, a, b, pairs=(), hint=None, remaining=None, operation_timeout=None):
         if self.process is None:
             ctx = mp.get_context('spawn')  # do not fork live OCC/Qt threads
             self.pipe, peer = ctx.Pipe()
@@ -378,7 +452,8 @@ class BoundedOCC:
         start = time.monotonic()
         try:
             self.pipe.send((mode, a.name, b.name, pairs, hint))
-            wait = self.timeout if remaining is None else max(0.01, min(self.timeout, remaining))
+            limit = self.timeout if operation_timeout is None else operation_timeout
+            wait = limit if remaining is None else max(0.01, min(limit, remaining))
             if self.pipe.poll(wait):
                 return self.pipe.recv()
             reason = f'OCC time limit ({time.monotonic() - start:.1f} s)'

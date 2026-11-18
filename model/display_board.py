@@ -10,6 +10,7 @@ import FreeCAD as App
 import Part
 
 from display_flex import flex
+from display_gasket import build as key_membrane
 from display_interface import INTERFACE, PARAMS
 from display_laminate import board, color_exposed_core, display_stack
 from display_lands import contacts, perforated_field, silkscreen, via_witnesses
@@ -31,6 +32,7 @@ def build(c):
     silkscreen(c, ink)
     controls = c.sub(root, 'UiTactiles', 'Три тактовые кнопки на PCB')
     switches(c, controls)
+    key_membrane(c)
     lcd = c.sub(root, 'UiPanelStack', 'LCD · опорный пакет, обод и стекло')
     display_stack(c, lcd)
     flex(c, root)

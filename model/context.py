@@ -2,28 +2,13 @@
 
 from pathlib import Path
 import csv
+import json
 import re
 
 import FreeCAD as App
 import Part
 
-
-GROUPS = {
-    'housing': ('Housing', '01  Оболочка и съёмная лицевая кассета'),
-    'main': ('MainPCB', '02  GYS005-S-088-A4.3 · сторона компонентов'),
-    'display': ('DisplayPCB', '03  20260305A · клавиши, FPC и дисплей'),
-    'heater': ('Heater', '04  Нагревательный узел · реконструкция'),
-    'battery': ('Battery', '05  Батарейная кассета · оценочная оболочка'),
-    'wires': ('Harness', '06  Жгуты · 10 припаянных и 4 подсветки'),
-    'mounts': ('Mounts', '07  Крепления и прижимы'),
-}
-
-# Presentation transforms only. These are not installation travel distances.
-EXPLODE = {
-    'housing': (0, 0, 0), 'heater': (76, 32, 112), 'battery': (84, 46, -52),
-    'main': (-60, -48, 16), 'wires': (-60, -48, 16),
-    'display': (-98, -92, 75), 'mounts': (7, -35, -62),
-}
+from assembly_units import EXPLODE, GROUPS, PARENT, UNITS
 
 # Reference rows describe fixed library package geometry; they are deliberately
 # not a knob for stretching a standardized integrated circuit with the PCB.
@@ -69,8 +54,9 @@ class Context:
         self.parents = {}
         self._load_sheet(specs)
         self.assembly = self.sub(None, 'Assembly', 'A  •  XKAH PRO  /  сборка')
+        self.units = {name: self.sub(self.assembly, name, label) for name, label in UNITS.items()}
         for key, (name, label) in GROUPS.items():
-            self.groups[key] = self.sub(self.assembly, name, label)
+            self.groups[key] = self.sub(self.units[PARENT[key]], name, label)
 
     def _load_sheet(self, specs):
         sheet = self.sheet
@@ -171,17 +157,45 @@ class Context:
             lineage.append(obj)
         return lineage[::-1]
 
-    def make_exploded(self):
+    def make_exploded(self, evidence):
+        from retail_service import service_layout
+
+        plan = service_layout(self)
+        text_property(evidence, 'ServicePlanJSON', json.dumps({'steps': plan.steps}, ensure_ascii=False), 'Service')
+        for obj in self.physical:
+            obj.addProperty('App::PropertyVector', 'ServiceExplodeMM', 'Service')
+            obj.ServiceExplodeMM = App.Vector(*plan.xyz[obj.Name])
+            text_property(obj, 'ServiceStage', plan.role[obj.Name], 'Service')
         group = self.sub(None, 'Exploded', 'B  •  Разнесённая сборка  /  скрыта')
-        text_property(group, 'Operation', 'Скрыть Assembly клавишей пробела, затем показать Exploded. Связи указывают на те же детали.')
-        for key, offset in EXPLODE.items():
-            base = self.groups[key]
-            link = self.doc.addObject('App::Link', 'Expl_' + base.Name)
+        text_property(group, 'Operation', 'Вид после разъединения штатных и сервисных узлов. Смещения показательные; ссылки ведут на установленные детали.')
+        children = {}
+        for leaf in self.physical:
+            for node in [leaf, *self.lineage(leaf)]:
+                children.setdefault(node.Name, set()).add(leaf.Name)
+
+        def link_branch(obj):
+            leaves = children.get(obj.Name, set())
+            if not leaves:
+                return
+            vectors = {plan.xyz[name] for name in leaves}
+            if len(vectors) > 1:
+                for child in obj.Group:
+                    link_branch(child)
+                return
+            offset, = vectors
+            parent = self.parents[obj.Name]
+            delta = App.Placement(App.Vector(*offset), App.Rotation())
+            link = self.doc.addObject('App::Link', 'Expl_' + obj.Name)
             group.addObject(link)
-            link.LinkedObject = base
+            link.LinkedObject = obj
             link.LinkTransform = True
-            link.Label = base.Label + '  ↗'
-            link.Placement = App.Placement(App.Vector(*offset), App.Rotation())
+            link.Label = obj.Label + '  ↗'
+            # Nested plates have a non-world frame. LinkPlacement adds only
+            # the parent frame: LinkTransform already keeps the target's own.
+            link.LinkPlacement = delta.multiply(parent.getGlobalPlacement())
+
+        for module in self.groups.values():
+            link_branch(module)
         self.doc.recompute()
         group.Visibility = False
         return group
@@ -207,6 +221,7 @@ class Context:
                              editable_parameter=local_aliases, envelope_x_mm=f'{bbox.XLength:.3f}',
                              envelope_y_mm=f'{bbox.YLength:.3f}', envelope_z_mm=f'{bbox.ZLength:.3f}',
                              measured_yes_no='NO', note=obj.ReconstructionNote,
+                             service_stage=obj.ServiceStage,
                              surface_material=getattr(obj, 'SurfaceMaterialNote', ''),
                              material_source=getattr(obj, 'SurfaceMaterialSource', '')))
         write_table(self.root / 'MODEL_MANIFEST.csv', rows, rows[0].keys())

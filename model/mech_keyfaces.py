@@ -50,10 +50,11 @@ def cushion(width, height):
     ])
 
 
-def _side_field(hand):
-    """Rounded wedge: tall inboard edge, shorter blunt outboard end."""
+def side_wedge(hand, width, height):
+    """Rounded wedge with the required extremal dimensions, not a sharp triangle."""
     def p(x, z):
-        return V(hand * x, 0, z)
+        # The original cubic's extremum in Z is ±2.83469 (not its pole 3.01).
+        return V(hand * (x - .04) * width / 4.32, 0, z * height / 5.66938)
 
     return Part.Wire([
         bezier(p(-2.12, 1.96), p(-2.12, 2.72), p(-1.66, 3.01), p(-1.02, 2.73)),
@@ -67,7 +68,7 @@ def _side_field(hand):
     ])
 
 
-def _sign(ident):
+def _sign(ident, size=(1, 1)):
     # Hand trace scaled to the existing cap, not a font or a billboard.
     if ident == 'C':
         name = 'молния'
@@ -86,7 +87,7 @@ def _sign(ident):
     # Sink into a matching seat below the lowest facet; no overlapping paint
     # solids. The sign's visible face is slightly proud of the field, not the rim.
     top = .055
-    face = Part.Face(polygon([V(x, top, z) for x, z in points]))
+    face = Part.Face(polygon([V(x * size[0], top, z * size[1]) for x, z in points]))
     return face.extrude(V(0, LAND + DEPTH + .025 - top, 0)), name, detail
 
 
@@ -145,8 +146,10 @@ def grip_key(c, parent, ident, label, blank, profile, source, note, *, pose=None
 
 
 def panel_key(c, cover, ident, cap, **scale):
-    field = cushion(6.42, 6.98) if ident == 'C' else _side_field(-1 if ident == 'L' else 1)
+    field = cushion(8.10, 9.30) if ident == 'C' else side_wedge(-1 if ident == 'L' else 1, 6.05, 7.18)
+    size = (1.27, 1.32) if ident == 'C' else (1.39, 1.26)
     grip_key(c, cover, 'OuterKey' + ident, 'Наружная клавиша ' + ident, cap, field,
-             PANEL_PHOTOS, 'Наружный колпачок, не кремовый толкатель 20260305A. '
-             'Ось, шток и посадочный контур оставлены на привязках UiSw.',
-             sign=_sign(ident), **scale)
+             PANEL_PHOTOS + '; https://xkah.us/products/xkah-pro (front)',
+             'Габарит и шаг наружных клавиш по лицевому виду товара. Пята отдельно '
+             'на исходной оси UiSw; это не кремовый толкатель 20260305A.',
+             sign=_sign(ident, size), **scale)

@@ -1,6 +1,6 @@
 """Native board outline, routed cutouts and rounded LCD laminations."""
 
-from display_interface import CROP, EST, FACE, LOW, STACK, TRACE
+from display_interface import CROP, EST, FACE, FAR_OPTIC, LOW, STACK, TRACE
 from display_native import (
     BRASS, CORE, MASK, P, circle, constrained_polygon, pad, rounded_loop,
     scale_u, scale_v, sketch,
@@ -80,13 +80,13 @@ def hole_metal(c, parent, side):
                'The bare PCB drill is enlarged by the provisional 0.035 mm wall on each side.')
 
 
-def _display_loop(profile, p, inset):
+def _display_loop(profile, p, inset, length_alias):
     """Centered about local u=0, referenced to the lower glass tangent v=0."""
     w = p['UiGlassW'] - 2 * inset
-    l = p['UiGlassL'] - 2 * inset
+    l = p[length_alias] - 2 * inset
     r = p['UiGlassR'] - inset
     bounds = (f'-{P}UiGlassW / 2 + {inset:g} mm', f'{inset:g} mm' if inset else None,
-              f'{P}UiGlassW / 2 - {inset:g} mm', f'{P}UiGlassL - {inset:g} mm')
+              f'{P}UiGlassW / 2 - {inset:g} mm', f'{P}{length_alias} - {inset:g} mm')
     rounded_loop(profile, -w / 2, inset, w, l, r, bounds, f'{P}UiGlassR - {inset:g} mm')
 
 
@@ -108,16 +108,18 @@ def display_stack(c, parent):
          'Dark blue-grey laminate edge visible; optical/electrical layer construction UNKNOWN.'),
         ('UiGlass', 'LCD · покровное стекло, погашенный экран', (0.0,),
          f'{P}UiGlassTop - {P}UiGlassT', p['UiGlassT'], P + 'UiGlassT', (0.074, 0.088, 0.106), EST,
-         'Dark face with curved lower corners, not an exterior faceplate. Active-pixel extent and controller UNKNOWN.'),
+         'Dark face with photographed lower corners. Only its hidden distal optical margin is extended to '
+         'back the retail opening; neither the supporting cell nor the PCB is stretched. Exact distal outline, '
+         'optical composition, support and active-pixel extent UNKNOWN. Not the removable film.'),
     ]
     for name, label, insets, zbase, thick, e_thick, rgb, confidence, note in layers:
         b = body(c, parent, name, label)
         profile = sketch(b, name + 'Profile', 'Замкнутый профиль · круглые касательные углы')
         for inset in insets:
-            _display_loop(profile, p, inset)
+            _display_loop(profile, p, inset, 'UiGlassL' if name == 'UiGlass' else 'UiStackL')
         pad(b, profile, name + 'Layer', 'Слой LCD по профилю', thick, e_thick)
         c.at(b, f'{P}UiGlassU * {P}UiW / 28.2 mm', f'{P}UiGlassV * {P}UiL / 50.4 mm', zbase)
-        c.register(b, parent, rgb, STACK + '; ' + CROP, confidence, note)
+        c.register(b, parent, rgb, STACK + '; ' + (FAR_OPTIC if name == 'UiGlass' else CROP), confidence, note)
 
 
 def color_exposed_core(pcb):

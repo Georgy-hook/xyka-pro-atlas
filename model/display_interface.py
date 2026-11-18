@@ -14,6 +14,11 @@ STACK = 'IMG_8917 / 18 oblique layer edges; IMG_8919 confirms closely stacked bo
 CROP = 'IMG_8908 / 09 / 19 silhouette against main carrier; far LCD/PCB ends cropped in 8917/18'
 EST = 'OBSERVED / physical dimensions ESTIMATE'
 LOW = 'ESTIMATE / obscured extent or height UNKNOWN'
+RETAIL_FRONT = ('XKAH US https://xkah.us/products/xkah-pro (front, three-quarter and side); '
+                'XYKA Silver https://static.tildacdn.com/tild6637-3737-4665-b333-373331623631/22.jpg')
+FAR_OPTIC = (CROP + '; comparison: https://www.reddit.com/r/hookah/comments/1walb9l/ image 8 '
+             '(glass, rim, flex), https://www.reddit.com/r/hookah/comments/1xat220/ image 8 '
+             '(detached trim); ' + RETAIL_FRONT)
 
 # alias, nominal mm, basis, estimated plus/minus mm (not a statistical interval).
 PARAMS = [
@@ -34,13 +39,21 @@ PARAMS = [
     ('UiCapL', 2.65, 'IMG_8917 / 18: cream actuator upper face, not external key', 0.40),
     ('UiPlungerTop', 2.0, STACK + '; extended cream actuator top from mask', 0.55),
     ('UiGlassW', 29.2, SCALE + '; visible lower tangencies adjusted for parallax', 2.8),
-    ('UiGlassL', 33.0, CROP + '; panel edge seen under long side of main carrier', 4.5),
+    ('UiStackL', 33.0, CROP + '; side silhouette behind main PCB. Provisional backing, cell and rim length.', 4.5),
+    ('UiGlassL', 39.6, FAR_OPTIC + '; installed optical fit: continuous dark field behind the whole window. '
+     'Far margin of front optical laminate only; hidden outline estimated, not an active LCD dimension.', 4.5),
     ('UiGlassR', 5.2, TRACE + '; lower corners visible, upper corners assumed alike', 1.2),
     ('UiGlassU', 0.15, TRACE + '; centreline of glass', 0.75),
     ('UiGlassV', 17.4, TRACE + '; lower glass edge, not centre ordinate', 1.4),
     ('UiGlassTop', 2.2, STACK + '; exterior glass surface from soldermask', 0.7),
     ('UiGlassT', 0.43, STACK + '; lens/cover subdivision UNKNOWN', 0.16),
     ('UiBackT', 0.66, STACK + '; polymer backing and seating combined', 0.28),
+    # Exterior optical zone in the removable trim; NOT a re-scaling of 20260305A.
+    ('UiWindowW', 28.0, RETAIL_FRONT + '; width 138/200 px and 242/350 px of the dark fascia.', 1.1),
+    ('UiWindowL', 33.8, RETAIL_FRONT + '; incl. rounded ends, 168/400 and 294/701 of mask height.', 1.4),
+    ('UiWindowDrop', 15.4, RETAIL_FRONT + '; along cassette, header to top tangent: 77 and 130 px.', 0.8),
+    ('UiMembraneOver', 0.65, 'Owner: silicone over the three switches; Reddit disassembly image 8. '
+     'Unloaded pad thickness above the cream crown; not switch travel.', 0.20),
 ]
 
 NOMINAL = {name: float(value) for name, value, _, _ in PARAMS}
@@ -63,9 +76,11 @@ INTERFACE = {
     'plunger_face_wh_mm': (2.2, 2.65),
     'plunger_top_mm': 2.0,
     'glass': {
-        'object': 'UiGlass', 'center_uv_mm': (0.15, 33.9), 'uv_size_mm': (29.2, 33.0),
+        'object': 'UiGlass', 'center_uv_mm': (0.15, 37.2), 'uv_size_mm': (29.2, 39.6),
         'radius_mm': 5.2, 'bottom_v_mm': 17.4, 'face_w_mm': 2.2,
-        'bounds_uv_mm': ((-14.45, 14.75), (17.4, 50.4)), 'active_area': 'UNKNOWN',
+        'bounds_uv_mm': ((-14.45, 14.75), (17.4, 57.0)), 'active_area': 'UNKNOWN',
+        'backing_cell_rim_master_l_mm': 33.0,
+        'far_edge_basis': FAR_OPTIC + '; optical margin is an estimate, not a longer PCB or cell.',
     },
     'contacts_mm': {f'UiContact{i:02d}': uv for i, uv in enumerate(CONTACTS, 1)},
     'edge_pads_mm': {f'UiEdgePad{i:02d}': uv for i, uv in enumerate(EDGE_PADS, 1)},

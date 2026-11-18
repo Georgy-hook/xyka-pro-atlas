@@ -2,6 +2,7 @@
 """Build the native reconstruction using FreeCAD's Python and standard workbenches."""
 
 import argparse
+import json
 import os
 from pathlib import Path
 import sys
@@ -26,6 +27,7 @@ def build(out):
     from export_step import export_sets
     from native_view import present
     from atlas_appearance import annotate
+    from retail_presentation import presentation_descriptor
 
     doc = App.newDocument('XKAH_PRO_A43_rebuilt')
     doc.Label = 'XKAH PRO  /  A4.3  •  фотореконструкция'
@@ -53,11 +55,12 @@ def build(out):
             module.build(c)
             doc.recompute()
         annotate(doc, evidence)
+        text_property(evidence, 'PresentationJSON', json.dumps(presentation_descriptor(doc), ensure_ascii=False), 'Presentation')
         print('=== Validate leaf shapes', flush=True)
         for obj in c.physical:
             if obj.Shape.isNull() or not obj.Shape.isValid():
                 raise ValueError(f'Invalid physical shape: {obj.Name} / {obj.Label}')
-        c.make_exploded()
+        c.make_exploded(evidence)
         doc.recompute()
         present()
         native = c.root / 'XKAH_PRO_A43_rebuilt.FCStd'

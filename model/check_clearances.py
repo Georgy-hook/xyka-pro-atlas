@@ -22,13 +22,19 @@ import time
 import FreeCAD as App
 import numpy as np
 
-from fit_geometry import BoundedOCC, EPS, SKIN_GUARD, box_gap, candidate, installed, vec
-from fit_interfaces import anchors, main_boards, mounts, window
+from fit_geometry import BoundedOCC, EPS, SKIN_GUARD, ProjectedBoxes, box_gap, candidate, installed, vec
+from fit_interfaces import MATE_PAIRS, anchors, main_boards, mounts, removable_mates, window
+from fit_keymask import membrane_stack, optical_checks
+from fit_removables import extra_mates, extra_scope, pack_print_distance
+from fit_service import retail, service_scope
+
+MATES = {frozenset(pair) for pair in MATE_PAIRS}
 
 FIELDS = ('status', 'check', 'object_A', 'object_B', 'world_XYZ_mm', 'direction_XYZ',
           'metric', 'value', 'largest_common_mm3', 'interpretation')
 ATTENTION = {'INTERFERENCE', 'TRACE_COMMON', 'INTERIOR_WITNESS', 'REVIEW', 'ANCHOR_GAP',
-             'BLOCKED_VIEW', 'EXPOSED_EDGE', 'RADIAL_CLASH', 'MISSED_CAPTURE', 'BORE_OCCLUDED', 'SEAT_COMMON'}
+             'BLOCKED_VIEW', 'EXPOSED_EDGE', 'RADIAL_CLASH', 'MISSED_CAPTURE', 'BORE_OCCLUDED', 'SEAT_COMMON',
+             'KEY_SIGHT_LEAK', 'STACK_OVERLAP', 'AXIS_OFFSET', 'TRANSFER_GAP'}
 
 
 def triple(value):
@@ -63,6 +69,13 @@ class Report:
 
 def scope(a, b, board_ids):
     groups = {a.group, b.group}
+    names = frozenset((a.name, b.name))
+    if names in MATES or groups in ({'Pod'}, {'Pod', 'Heater'}) or extra_scope(a, b):
+        return 'removable/thermal interface'
+    if 'UiKeyMembrane' in names:
+        return 'silicone/material'  # the whole sheet, not just the button axes
+    if 'MechServiceCover' in names and (a.name.startswith('MechOuterKey') or b.name.startswith('MechOuterKey')):
+        return 'cap/cover'
     if a.name.startswith('MechPanelEar') and b.name == a.name.replace('PanelEar', 'ServiceScrew'):
         return 'case ear/screw'
     if b.name.startswith('MechPanelEar') and a.name == b.name.replace('PanelEar', 'ServiceScrew'):
@@ -79,6 +92,10 @@ def scope(a, b, board_ids):
         return next(iter(pcb)) + '/' + next(iter(groups - pcb))
     if len(groups) == 1 and pcb and (a.name in board_ids or b.name in board_ids):
         return 'on-board material/' + a.group
+    if service_scope(a, b):
+        return 'service hardware/material'
+    if any(n.startswith(('MechOuterKey', 'MechKeySeat', 'MechKeyCarrier', 'MechCoverWindow')) for n in names):
+        return 'fascia/material'
     return None
 
 
@@ -173,14 +190,14 @@ def closest_runs(leaves, occ, known_hits, emit, seconds):
         emit(status, label, a.name, b.name, r['point'], r['normal'], 'minimum BRep gap mm', r['value'], detail=note)
 
 
-def run(path, out, timeout, budget):
+def run(path, out, timeout, budget, ink_timeout=20.):
     checksum = digest(path)
     report = Report()
     emit = report.add
     emit('INPUT', 'native assembly', path.name, detail='SHA256 ' + checksum + '; FreeCAD ' + '.'.join(App.Version()[:3]))
     emit('LIMIT', 'reference', detail='Installed X right, Y inward, Z up; mm. Handoff §§5/9, IMG_8920/8918/AD206911: routing, stack and interfaces visible, actual clearances/tolerances not measured. No electrical, thermal, flexible-motion, preload or as-built verification.')
-    emit('LIMIT', 'scope', detail='Only registered solid leaves below the seven installed Assembly groups. No Exploded links, construction history, hidden endpoints or all-pairs search within a subsystem. Material-to-substrate and cross-group checks as counted below.')
-    emit('LIMIT', 'method', detail=f'Analytic world/constituent AABBs reject bulk when overlap along any axis <= {EPS:g} mm (may still touch). Mesh AABB and native loft ring screens with ~{SKIN_GUARD:g} mm guard are not exact clearances. Selected actual BRep solid commons; 0.01 mm³ separates trace/bulk reporting only, not an allowable clash.')
+    emit('LIMIT', 'scope', detail='Only registered solids below installed Assembly, including its functional groups in the upper/lower units. No Exploded links, construction history, hidden endpoints or exhaustive all-pairs search. Scoped material checks are counted below.')
+    emit('LIMIT', 'method', detail=f'Analytic world and shared PCB-frame boxes of native shapes/solids reject bulk when overlap along any axis <= {EPS:g} mm (may still touch). Mesh AABB and native loft ring screens with ~{SKIN_GUARD:g} mm guard are not exact clearances. Selected actual BRep solid commons; 0.01 mm³ separates trace/bulk reporting only, not an allowable clash.')
     emit('LIMIT', 'witness', detail='For an exact common: point in/on largest connected common; direction and value = local exit from that point to the nearest shell of B, not a minimum translation for all of A. Volume is largest connected solid common, not cumulative compound volume. Unknown/budget/timeouts never count as clear.')
     phase('Read installed material volumes')
     doc = App.openDocument(str(path))
@@ -194,22 +211,34 @@ def run(path, out, timeout, budget):
             raise RuntimeError('No installed physical solids; refusing empty fit report')
         emit('CHECKED', 'installed inventory', metric='physical leaves', value=len(leaves), detail=str(dict(sorted(counts.items()))))
         boards = main_boards(leaves)
+        datum = boards.get('MainPCB') or boards.get('DisplayPCB')
+        projected = ProjectedBoxes(datum.obj) if datum else None
         board_ids = {b.name for b in boards.values()} | {'PcMaskFace', 'PcMaskRear'}
         for group in ('MainPCB', 'DisplayPCB'):
             if group not in boards:
                 emit('REVIEW', 'substrate identity', group, detail='No unique registered board substrate identified')
         phase('Check named anchors, window and board bores')
         captures = anchors(leaves, emit)
-        gaps = window(leaves, emit) + mounts(leaves, boards, emit)
+        retail_case = retail(leaves)
+        gaps = window(leaves, emit)
+        gaps += mounts(leaves, boards, emit)
+        gaps += removable_mates(leaves, emit)
+        if retail_case or 'MechPodScreen' in leaves or 'MechPackEndContacts' in leaves:
+            gaps += extra_mates(leaves, emit)
+        phase('Probe three key annuli: occupied first surfaces in six views')
+        optical_checks(leaves, emit)
+        gaps += membrane_stack(leaves, emit)
         seating = {frozenset((a.name, b.name)) for a, b in gaps if 'Seat' in a.name or 'Frame' in a.name}
         if len(boards) == 2:
             gaps.append((boards['MainPCB'], boards['DisplayPCB']))
         for letter in 'LCR':
             if 'UiPlunger' + letter in leaves and 'MechOuterKey' + letter in leaves:
                 gaps.append((leaves['UiPlunger' + letter], leaves['MechOuterKey' + letter]))
-                seating.add(frozenset(('UiPlunger' + letter, 'MechOuterKey' + letter)))
-        for group in ('Battery', 'Heater', 'Housing'):
-            members = [s for s in leaves.values() if s.group == group]
+                if 'UiKeyMembrane' not in leaves:
+                    seating.add(frozenset(('UiPlunger' + letter, 'MechOuterKey' + letter)))
+        for group, categories in [('Battery', {'Battery'}), ('Heater/Pod', {'Heater', 'Pod'}),
+                                  ('Case', {'Housing', 'Fascia', 'LowerBody', 'LightRing'})]:
+            members = [s for s in leaves.values() if s.group in categories]
             for board in boards.values():
                 if not members:
                     continue
@@ -227,7 +256,7 @@ def run(path, out, timeout, budget):
                 continue
             if b.contact and not a.contact:
                 a, b = b, a
-            method, pairs, hint = candidate(a, b)
+            method, pairs, hint = candidate(a, b, projected)
             if not pairs:
                 stats[category][method] += 1
             else:
@@ -274,18 +303,30 @@ def run(path, out, timeout, budget):
         phase('Measure selected material-to-material gaps and write coverage')
         seen = set()
         gap_end = time.monotonic() + min(40, budget / 3)
+        ink_left = 3 * ink_timeout  # separate cap; never take time from ordinary fits or commons
         for a, b in gaps:
             key = tuple(sorted((a.name, b.name)))
             if key in seen:
                 continue
             seen.add(key)
-            remaining = gap_end - time.monotonic()
-            r, reason = occ.call('gap', a, b, remaining=remaining) if remaining > 0 else (None, 'Distance-work budget exhausted')
+            if pack_print_distance(a, b):
+                start = time.monotonic()
+                r, reason = (occ.call('split_gap', a, b, remaining=ink_left, operation_timeout=ink_timeout)
+                             if ink_left > 0 else (None, 'Selected lettering distance budget exhausted'))
+                elapsed = time.monotonic() - start
+                ink_left -= elapsed
+                gap_end += elapsed
+            else:
+                remaining = gap_end - time.monotonic()
+                r, reason = occ.call('gap', a, b, remaining=remaining) if remaining > 0 else (None, 'Distance-work budget exhausted')
             if reason:
                 emit('REVIEW', 'selected distance', a.name, b.name, detail=reason)
             else:
                 status = 'NEAR' if r['value'] <= EPS else 'GAP'
                 detail = 'Nearest BRep witnesses; midpoint and direction A → B. Zero alone is not proof of a seated joint.'
+                if 'checked' in r:
+                    detail += (f" Exact connected-solid distances: {r['checked']}/{r['possible']}; "
+                               f"only AABB lower bounds prune. Limiting subshapes: Solid{r['solid_a']} / Solid{r['solid_b']}.")
                 if status == 'NEAR' and frozenset(key) in seating and frozenset(key) not in nonclear:
                     status = 'NOMINAL_SEAT'
                     detail = 'Intended mating faces touch in the shown position, no detected bulk. No preload, travel, or measured fit inferred.'
@@ -313,14 +354,15 @@ def main():
     parser.add_argument('assembly', type=Path)
     parser.add_argument('--out', type=Path, help='default: FIT_CHECK.csv beside input')
     parser.add_argument('--pair-timeout', type=float, default=4., help='OCC seconds per selected pair')
+    parser.add_argument('--ink-timeout', type=float, default=20., help='seconds per exact glyph/well distance; separate pool is 3× this value')
     parser.add_argument('--budget', type=float, default=120., help='seconds for exact commons; selected distances have separate capped budget')
     parser.add_argument('--strict', action='store_true', help='exit nonzero on negative/unresolved findings')
     args = parser.parse_args()
     path = args.assembly.resolve(strict=True)
     out = (args.out or path.with_name('FIT_CHECK.csv')).resolve()
-    if path.suffix.lower() != '.fcstd' or out.suffix.lower() != '.csv' or args.pair_timeout <= 0 or args.budget <= 0:
+    if path.suffix.lower() != '.fcstd' or out.suffix.lower() != '.csv' or min(args.pair_timeout, args.budget, args.ink_timeout) <= 0:
         parser.error('Expected a native FCStd, CSV output and positive time limits')
-    problems = run(path, out, args.pair_timeout, args.budget)
+    problems = run(path, out, args.pair_timeout, args.budget, args.ink_timeout)
     return int(args.strict and problems)
 
 

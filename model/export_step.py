@@ -4,6 +4,7 @@ import FreeCAD as App
 import Import
 
 from context import world_shape
+from assembly_units import OUTER
 
 
 def export_sets(c):
@@ -37,7 +38,7 @@ def export_sets(c):
                 leaf.ViewObject.DiffuseColor = colors
         exchange.recompute()
         names = [('rebuilt', [top]),
-                 ('outer_housing', [copies[c.groups[k].Name] for k in ('housing', 'mounts')]),
+                 ('outer_housing', [copies[c.groups[k].Name] for k in OUTER]),
                  ('electronics', [copies[c.groups[k].Name] for k in ('main', 'display', 'wires')])]
         for title, shapes in names:
             path = c.root / f'XKAH_PRO_A43_{title}.step'
