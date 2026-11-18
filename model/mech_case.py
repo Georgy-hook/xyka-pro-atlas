@@ -13,6 +13,8 @@ import FreeCAD as App
 import Part
 
 from mech_keyfaces import panel_key
+from mech_profiles import (BODY_TOP, COVER_END, COVER_TIP, SIDE_SOURCE, cassette_frame, crown_and_bridge,
+                           fairing_master, in_cassette, pocket_master)
 from mech_shapes import (
     ALLOY, BACK_PHOTO, CASE, CY, DY, EST, EXT, HZ, INK, MAN, MOLD, OBS, OPEN_PHOTO,
     PALE, PHOTO, RETAIL, SEAL, STEEL, US_FAMILY, V, WO1, WX, Y, Z, bezier, body_pos,
@@ -50,16 +52,10 @@ def transverse_cutter(x, y, z, radius, depth=25):
 
 def shell_geometry():
     barrel = barrel_solid()
-    # A front extrusion alone would yield slab-sided corners. The outer shoulder
-    # widens and runs into the turned body while the U-tip sweeps down and back.
-    outer_sections = [(0, 42.6, 61.65), (4.0, 44.15, 59.7),
-                      (13.4, 48.7, 53.0), (23.0, 54.6, 47.1), (33, 55.3, 44.8)]
-    nose = Part.makeLoft([u_wire(y, w, z, 146.60) for y, w, z in outer_sections], True, False)
-    outer = barrel.fuse(nose).removeSplitter()
+    nose = fairing_master()
+    outer = barrel.fuse(nose.common(z_box(35, BODY_TOP-35))).removeSplitter()
     inner_barrel = turned([(0, 7), (37.15, 7), (29.85, 148.2), (0, 148.2)], CY)
-    inner_sections = [(-2, 40.6, 62.9), (1.0, 40.6, 62.9),
-                      (9, 42.0, 59.55), (18, 45.1, 54.6), (32.4, 49.0, 49.1)]
-    pocket = Part.makeLoft([u_wire(y, w, z, 148.3) for y, w, z in inner_sections], True, False)
+    pocket = pocket_master()
     shell = outer.cut(inner_barrel.fuse(pocket)).removeSplitter()
     lower = shell.common(seam_mask(-.28))
     upper = shell.cut(seam_mask(.28))
@@ -97,18 +93,13 @@ def shell_geometry():
     # Collar around battery mouth. Open route below the front cap is visible in
     # AD206911: leave clearance for four wire jackets behind the transverse rail.
     deck = outer.common(z_box(145.12, 1.48)).cut(circle(24.8, 5.0, 0, CY, 143.0))
-    portal = Part.makeBox(25.0, 15.8, 9, V(-12.5, 3.8, 142.0))
-    front_rebate = Part.makeBox(40.7, 1.95, 8, V(-20.35, -1.0, 142))
+    portal = in_cassette(Part.makeBox(25.0, 15.8, 18, V(-12.5, 3.8, 138.0)))
+    front_rebate = in_cassette(Part.makeBox(40.7, 1.95, 18, V(-20.35, -1.0, 139)))
     deck = deck.cut(portal).cut(front_rebate)
     upper = upper.fuse(deck).removeSplitter()
 
-    # Take a real planar section for the crown, preserving the U nose at the
-    # front rather than pretending it is just another concentric washer.
-    section = max(outer.slice(Z, 146.1), key=lambda w: w.Length)
-    face = Part.Face(section)
-    crown = moved(face.extrude(V(0, 0, 2.7)), 0, 0, 150.83 - 146.1)
-    crown = crown.cut(circle(25.10, 6.0, 0, CY, 149.5))
-    return lower, upper, crown, outer
+    crown, bridge = crown_and_bridge(nose)
+    return lower, upper, crown, outer, bridge
 
 
 def base_skirt():
@@ -165,7 +156,7 @@ def surface_mark(outer):
 def service_panel(c, cover):
     # Native aperture and three through-openings reference the other module's
     # alias values. Behind these is the real display assembly, not a texture.
-    panel = Part.Face(u_wire(.07, 40.14, 63.13, 148.75)).extrude(V(0, .76, 0))
+    panel = Part.Face(u_wire(.07, 40.14, COVER_TIP, COVER_END)).extrude(V(0, .76, 0))
     support = scaled(c, cover, 'PanelBlank', 'Заготовка съёмной U-панели', panel)
     lens = Part.Face(rounded_rect(28.0, 31.8, 4.70, -2)).extrude(V(0, 8, 0))
     xf = 'Parameters.UiGlassU * Parameters.UiW / 28.2 mm'
@@ -200,36 +191,27 @@ def service_panel(c, cover):
                'Маска: световой проём на 0.6 мм внутри края стекла по периметру. Видимая область не размер матрицы.')
 
 
-def header_return():
-    """Dark U-shaped return behind the crown. The wire channel remains open inboard."""
-    ledge = Part.makeBox(40.30, 3.81, 2.05, V(-20.15, 0, 148.78))
-    band = circle(31.0, 6.0, 0, CY, 145.5)
-    for x in (-20.38, 18.95):
-        side = Part.makeBox(1.43, 22.9, 4.22, V(x, 1.02, 146.61)).cut(band)
-        ledge = ledge.fuse(side)
-    return ledge.removeSplitter()
-
-
 def housing(c):
     group = c.groups['housing']
     upper = c.sub(group, 'MechUpperShellGroup', 'Верхняя часть · кожух и корона')
     lower = c.sub(group, 'MechLowerShellGroup', 'Основание · паз чаши и патрубок')
     cover = c.sub(group, 'MechServicePanelGroup', 'Съёмная лицевая панель · крепление с обратной стороны')
-    lo_shape, up_shape, crown_shape, outer = shell_geometry()
+    cassette_frame(c, cover)
+    lo_shape, up_shape, crown_shape, outer, bridge = shell_geometry()
     scaled_part(c, upper, 'UpperFairing', 'Верхний кожух · U-проём, боковые плечи и задние щели',
-                up_shape, CASE, PHOTO+'; '+MAN+' f,n; '+BACK_PHOTO+'; '+US_FAMILY, OBS,
-                'Плавный вынос панели; волнообразная плоскость стыка по видами производителя; глубина полости и толщина стенки оценены. Скрытые воздуховоды не восстановлены.')
+                up_shape, CASE, PHOTO+'; '+SIDE_SOURCE+'; '+MAN+' f,n; '+US_FAMILY, OBS,
+                'Наклон панели 7.5° и кривизна EST: тонкая U-кромка плавно переходит в конус. Глубина полости и стенка оценочны.')
     scaled_part(c, lower, 'LowerShroud', 'Корпус основания · неплоский стык и посадочный пояс',
                 lo_shape, CASE, MAN+' f,h,i; '+OPEN_PHOTO+'; '+US_FAMILY, EXT,
                 'Нижняя половина съёмная. Неподтверждённая внутренняя полка оставляет свободное место для чаши.')
     scaled_part(c, upper, 'TopBridge', 'Корона · перемычка панели и буртик гнезда батареи',
-                crown_shape, INK, MAN+' a,b; '+US_FAMILY, EXT,
+                crown_shape, INK, SIDE_SOURCE+'; '+MAN+' a,b; '+US_FAMILY, EXT,
                 'Буртик не является частью батарейного блока; сверху оставлено открытое гнездо.')
     scaled_part(c, upper, 'LightRing', 'Кольцо индикации · светорассеиватель',
                 ring(30.95, 28.85, 3.70, 0, CY, 146.95), PALE, MAN+' b; '+PHOTO,
                 EXT, 'Видимый пояс, не предполагаемая LED-плата. Выводы светодиодов не установлены.')
     scaled_part(c, upper, 'NoseBridge', 'Верхняя перекладина сервисного окна',
-                header_return(), MOLD, PHOTO,
+                bridge, MOLD, PHOTO+'; '+SIDE_SOURCE,
                 OBS, 'Четыре провода исчезают позади перекладины, а не в контактах дисплея.')
     scaled_part(c, lower, 'BevelGrip', 'Нижний скос · утопленные грани и прерывистые окна',
                 base_skirt(), MOLD, MAN+' j; '+BACK_PHOTO, EXT,

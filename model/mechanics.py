@@ -1,8 +1,11 @@
 """XKAH / XYKA PRO A4.3 — exterior and provisional mechanical assembly.
 
 Integration contract: Sheet aliases below plus BoardW/L/T and Ui* from the two
-PCB modules. X is right looking at the display, Y inward from the face (Y=0),
-Z up from the lower socket mouth. All dimensions in mm. Native FreeCAD 1.1;
+PCB modules. Global X is right looking at the display, global Y increases into
+the barrel, Z is up from the lower socket mouth. The inclined exterior datum
+crosses the old Y=0 reference at Z=84 mm nominal. PCB depth and board-bottom
+height are local cassette coordinates; see mech_profiles.cassette_frame.
+All lengths in mm. Native FreeCAD 1.1;
 no FeaturePython or saved-document proxy. The build does not create any PCB.
 
 Exterior stations follow the printed user manual p.04 and the actual regional
@@ -26,12 +29,12 @@ SMOKEDEX = 'https://smokedex.info/en/p/H8PEDkC54u6/xkah-pro-hookah-e-hmd'
 
 PARAMS = [
     ('BodyW', 78.0, MAN+' p.04: max width/height ≈134/259. '+SMOKEDEX+' lists WIDTH 75 mm; '+RETAIL+' lists DIAMETER 70 mm. Different datums; neither is a maximum calliper width of A4.3.', 7.0),
-    ('BodyD', 98.0, MAN+' p.04: depth/width ≈169/134 across face and rear attachment hinge. '+US_FAMILY, 9.0),
+    ('BodyD', 98.0, MAN+' p.04, master chassis depth from Y=0 reference to rear hinge; inclined U-tip projects past this datum. '+US_FAMILY, 9.0),
     ('BodyH', 154.0, MAN+' p.04; '+RETAIL+' and '+SMOKEDEX+' both list 16 cm rounded, without datums. That falls in the photo estimate; do not rescale the unmeasured PCB seating.', 9.0),
-    ('PanelBase', 68.0, PHOTO+'; provisional seated lower edge of main PCB above U-tip, not pose of board pulled forward in photograph.', 6.0),
-    ('MainDepth', 8.0, 'IMG_8919 / IMG_AD206911: estimated component-face Y leaving room for board backs and service frame.', 1.65),
-    ('UiBase', 77.0, MAN+' p.04 c,d,e; IMG_8917/8918. Estimated keypad registration in exterior front outline.', 5.0),
-    ('UiDepth', 3.5, 'IMG_8917, IMG_8918, IMG_8919: mask depth allowing recessed glass and exterior cap over bare plunger.', .65),
+    ('PanelBase', 68.0, PHOTO+'; lower edge of seated main PCB, height along inclined cassette, not global Z.', 6.0),
+    ('MainDepth', 8.0, 'IMG_8919 / IMG_AD206911: inward distance normal to the inclined panel, to main PCB component face.', 1.65),
+    ('UiBase', 77.0, MAN+' p.04 c,d,e; IMG_8917/8918. Lower UI board edge, height along inclined cassette.', 5.0),
+    ('UiDepth', 3.5, 'IMG_8917, IMG_8918, IMG_8919: inward distance along panel normal to UI soldermask, not global Y.', .65),
     ('BatteryOD', 45.4, MAN+' pp.03–04 iii,a; '+PACK_PHOTO+'; whole cartridge outer envelope only.', 3.3),
     ('BatteryL', 86.0, MAN+' p.03 iii; '+WO1+' Figs.8–12; cap-to-base envelope of a removable pack, internals unknown.', 8.0),
     ('PodOD', 42.0, PODS+' retailer replacement pod, width 42 mm; not measured on owner unit.', 1.6),

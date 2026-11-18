@@ -34,8 +34,6 @@ TOP = camera((0, 0, 1), (0, 1, 0))
 BOTTOM = camera((0, 0, -1), (0, -1, 0))
 STUDIO = camera((0.72, -1.4, 0.61))
 EXPLODED = camera((0.69, -1.2, 0.48))
-ELEC = camera((-0.50, 1.35, 0.45))
-ELEC_BACK = camera((0.50, -1.5, 0.30))
 
 
 @dataclass(eq=False)
@@ -131,8 +129,15 @@ class Scene:
         return offsets
 
     def board_frame(self, root):
+        """World-space rows u (across), v (along), w (towards populated face)."""
         rotation = self.parts[root].getGlobalPlacement().Rotation
         return np.array([tuple(rotation.multVec(App.Vector(*v))) for v in np.eye(3)])
+
+    def board_studio_frame(self, root):
+        # Compose the studio orbit with THIS board's basis, not with world Y.
+        # Its opposite board can be installed at an entirely different angle.
+        orbit = (.50, .45, 1.35) if root == 'MainPCB' else (.50, .30, 1.5)
+        return camera(orbit, (0, 1, 0)) @ self.board_frame(root)
 
     def close(self):
         App.closeDocument(self.doc.Name)
@@ -159,8 +164,9 @@ def substrate(scene, root):
                   'подложк', 'основа платы', 'контур PCB', required=False)
     if part is not None:
         return part
-    # Longest broad plate without depending on its orientation in the enclosure.
-    return max(items, key=lambda p: np.prod(np.sort(p.box[1] - p.box[0])[-2:]))
+    # Largest footprint in the board frame; world-AABB areas change under tilt.
+    frame = scene.board_frame(root)
+    return max(items, key=lambda i: np.prod(np.diff(frame_box([i], frame), axis=0)[0, :2]))
 
 
 def board_layers(scene, root):
@@ -175,10 +181,45 @@ def combined_box(items):
                      np.max([i.box[1] for i in items], axis=0)))
 
 
+def frame_box(items, frame):
+    """Exact u,v,w bounds of the actual B-reps, in projected world millimetres.
+
+    Transform first, bound second. Projecting a world AABB's eight corners
+    overstates all three dimensions of a tilted laminate. No tessellation or
+    replacement by a nominal spreadsheet dimension is used for dimensions.
+    """
+    matrix = np.eye(4)
+    matrix[:3, :3] = frame
+    view = App.Placement(App.Vector(), App.Rotation(App.Matrix(*matrix.ravel())))
+    boxes = []
+    for item in items:
+        shape = item.shape.copy()
+        shape.Placement = view.multiply(shape.Placement)
+        b = shape.optimalBoundingBox(False, False)
+        boxes.append(((b.XMin, b.YMin, b.ZMin), (b.XMax, b.YMax, b.ZMax)))
+    if not boxes:
+        raise ValueError('No geometry for projected dimension')
+    bounds = np.array(boxes)
+    return np.stack((bounds[:, 0].min(0), bounds[:, 1].max(0)))
+
+
 def projected_box(items, frame):
-    from itertools import product
-    pts = np.vstack([np.array(list(product(*i.box.T))) for i in items]) @ frame[:2].T
-    return (*pts.min(axis=0), *pts.max(axis=0))
+    lo, hi = frame_box(items, frame)
+    return (*lo[:2], *hi[:2])
+
+
+def distance_between_layers(first, second):
+    """Shortest unsigned distance between substrate bodies; not clearance to the carrier."""
+    return min(a.shape.distToShape(b.shape)[0] for a in first for b in second)
+
+
+def flat_face_normal(item):
+    """Normal to its broadest planar face, including a plane represented as NURBS."""
+    for face in sorted(item.shape.Faces, key=lambda f: f.Area, reverse=True):
+        plane = face.findPlane(1e-6)
+        if plane is not None:
+            return unit(tuple(plane.Axis))
+    raise ValueError(f'No planar face on {item.name}; cannot identify its normal')
 
 
 def unique(items):

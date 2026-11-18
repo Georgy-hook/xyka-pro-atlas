@@ -154,14 +154,15 @@ class Context:
         return obj
 
     def frames(self):
+        from mech_profiles import cassette_frame
+
         front = App.Rotation(App.Vector(1, 0, 0), 90)
         back = App.Rotation(App.Vector(0, 0, 1), 180).multiply(front)
         for key, rot, depth, base in [('display', front, 'UiDepth', 'UiBase'),
                                       ('main', back, 'MainDepth', 'PanelBase'),
                                       ('wires', back, 'MainDepth', 'PanelBase')]:
             obj = self.groups[key]
-            obj.Placement = App.Placement(App.Vector(), rot)
-            self.at(obj, 0, 'Parameters.' + depth, 'Parameters.' + base)
+            cassette_frame(self, obj, rot, depth, base)
 
     def lineage(self, obj):
         lineage = []

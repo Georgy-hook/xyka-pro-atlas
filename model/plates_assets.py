@@ -13,8 +13,7 @@ from shapely import from_wkb
 
 import plates_render as studio
 import plates_vector as vector
-from plates_scene import FRONT, REAR, TOP, RIGHT, LEFT, BOTTOM, STUDIO, EXPLODED, ELEC, ELEC_BACK
-from plates_scene import board_layers, choose
+from plates_scene import RIGHT, STUDIO, EXPLODED, board_layers, camera, choose
 
 
 def progress(text):
@@ -32,8 +31,10 @@ def digest(path):
 @dataclass(frozen=True)
 class Cut:
     x: float
-    seat_x: float
     mount: object
+    mount_point: np.ndarray
+    seat_frame: np.ndarray
+    seat_depth: float
 
 
 class Assets:
@@ -97,16 +98,28 @@ class Assets:
     def colors(self, root):
         return self.derived('color', self.scene.by[root], self.scene.board_frame(root))
 
-    def section(self, items, x):
-        return self.derived('section', items, RIGHT, float(x))
+    def plan_points(self, root, items):
+        """Interior visible points, not projected 3-D box centres (holes/occlusion)."""
+        key = 'plan-labels:' + root
+        if key not in self.memo:
+            self.memo[key] = studio.root_anchors(self.scene.by[root], self.scene.board_frame(root),
+                                                 name_mode=True, width=1300)
+        anchors = self.memo[key]
+        return [(n, anchors[i.name]) for n, i in enumerate(items, 1) if i.name in anchors]
+
+    def section(self, items, depth, frame=RIGHT):
+        """Retain w <= depth with w and the plane marker in the SAME world frame."""
+        return self.derived('section', items, frame, float(depth))
 
     def raster(self, mode):
         scene = self.scene
         views = {
             'assembled': (scene.items, STUDIO, None, (1380, 1510)),
             'exploded': (scene.items, EXPLODED, scene.offsets, (1990, 1500)),
-            'electronics': (scene.subset('MainPCB', 'Harness', 'DisplayPCB'), ELEC, None, (1460, 1480)),
-            'electronics-front': (scene.subset('MainPCB', 'Harness', 'DisplayPCB'), ELEC_BACK, None, (1060, 1380)),
+            'electronics': (scene.subset('MainPCB', 'Harness', 'DisplayPCB'),
+                            scene.board_studio_frame('MainPCB'), None, (1460, 1480)),
+            'electronics-front': (scene.subset('MainPCB', 'Harness', 'DisplayPCB'),
+                                  scene.board_studio_frame('DisplayPCB'), None, (1060, 1380)),
         }
         if mode not in views:
             raise ValueError(mode)
@@ -147,7 +160,18 @@ class Assets:
         if mount is None:
             # Do not imply this is a post; use the actual first mounting leaf.
             mount = s.by['Mounts'][0]
-        return Cut(x, mount.center[0], mount)
+        # In locator B1 the observer looks along local +w. A plane normal to
+        # local u therefore appears edge-on at this u, even after yaw or roll.
+        # The side view B2 retains gravity vertical where geometrically possible.
+        u, v, _ = s.board_frame('DisplayPCB')
+        up = (0, 0, 1) if abs(u[2]) < .98 else v
+        seat_frame = camera(u, up)
+        # A registered mounting leaf can be a one-solid Compound (Part::Scale).
+        # Use a point on the axis of a real fastening body, not the empty space
+        # between bodies of a compound, nor the centre of its world AABB.
+        principal = max(mount.shape.Solids, key=lambda solid: solid.Volume)
+        origin = np.array(principal.CenterOfMass)
+        return Cut(x, mount, origin, seat_frame, float(u @ origin))
 
     def cut_items(self, mounting=False):
         scene = self.scene
@@ -157,4 +181,6 @@ class Assets:
             items.extend(scene.subset('Battery', 'Heater'))
         for root in ('MainPCB', 'DisplayPCB'):
             items.extend(board_layers(scene, root))
+        # Show the actual glass plane and supporting LCD stack in section.
+        items.extend(i for i in scene.by['DisplayPCB'] if i.name in ('UiBacking', 'UiCell', 'UiRim', 'UiGlass'))
         return items

@@ -14,6 +14,8 @@ import traceback
 
 import FreeCAD as App
 import Part
+from OCC.Core.BRepGProp import brepgprop
+from OCC.Core.GProp import GProp_GProps
 
 from context import world_shape
 from pack_release import checksum
@@ -32,6 +34,17 @@ def bbox(shape):
     return (b.XMin, b.YMin, b.ZMin, b.XMax, b.YMax, b.ZMax)
 
 
+def solid_volume(solid):
+    # A fixed-order quadrature of trimmed splines can differ after STEP
+    # reparametrizes the *same* surface. Integrate both B-reps adaptively;
+    # do not relax the exchange acceptance threshold or use a mesh volume.
+    props = GProp_GProps()
+    brepgprop.VolumeProperties(Part.__toPythonOCC__(solid), props, 1e-7, True, False)
+    volume = abs(props.Mass())
+    require(math.isfinite(volume) and volume > 0., 'Degenerate solid in volume measurement')
+    return volume
+
+
 def step_summary(objects):
     solids = 0
     volume = 0.0
@@ -40,7 +53,7 @@ def step_summary(objects):
         shape = world_shape(obj)
         # A printed feature can contain both solids and closed ink outlines.
         solids += len(shape.Solids)
-        volume += sum(abs(solid.Volume) for solid in shape.Solids)
+        volume += sum(solid_volume(solid) for solid in shape.Solids)
         boxes.append(bbox(shape))
     bounds = [min(bb[j] for bb in boxes) if j < 3 else max(bb[j] for bb in boxes) for j in range(6)]
     return solids, volume, bounds
@@ -49,6 +62,47 @@ def step_summary(objects):
 def rows(path):
     with path.open(encoding='utf-8-sig', newline='') as csvfile:
         return list(csv.DictReader(csvfile))
+
+
+def fascia_profile(doc):
+    """Use the reopened *physical* cheeks, mask and glass; ignore display meshes."""
+    def face_normal(face):
+        u0, u1, v0, v1 = face.ParameterRange
+        return face.normalAt((u0 + u1) / 2, (v0 + v1) / 2)
+
+    # A rigid rotation of the *entire* old model produces a similar front
+    # angle to world Z. The socket mouth must still lie in the chassis base.
+    socket = world_shape(doc.MechStemSocket)
+    end_faces = [f for f in socket.Faces if f.Surface.TypeId == 'Part::GeomPlane']
+    require(end_faces and abs(face_normal(max(end_faces, key=lambda f: f.Area)).z) > .9999,
+            'Base socket is not upright: do not tilt the entire assembly')
+    shapes = [world_shape(doc.getObject(n)) for n in ('MechUpperFairing', 'MechServiceCover')]
+    for key in ('TopL', 'TopR', 'SideR', 'Foot'):
+        ear = doc.getObject('MechPanelEar' + key)
+        require(len(ear.Shape.Solids) == 1, f'Disconnected mounting-ear offcut: {key}')
+    height = doc.Parameters.BodyH.Value
+    levels = [height * f for f in (.60, .72, .90)]
+    ys = []
+    for z in levels:
+        loops = [wire for shape in shapes for wire in shape.slice(App.Vector(0, 0, 1), z)]
+        require(loops, f'No front profile at Z={z:.2f} mm')
+        ys.append(min(w.optimalBoundingBox(False, False).YMin for w in loops))
+
+    # In the side photograph the upper edge retreats inward; in the earlier
+    # model these three cut planes all met the same vertical front at Y=0.
+    angle = math.degrees(math.atan2(ys[-1] - ys[0], levels[-1] - levels[0]))
+    require(ys[0] < ys[1] < ys[2] and 4 < angle < 13, 'Front of the screen bay is not raked inward')
+    outward = doc.DisplayPCB.getGlobalPlacement().Rotation.multVec(App.Vector(0, 0, 1))
+    alignments = []
+    for shape in (shapes[-1], world_shape(doc.UiGlass)):
+        face = max(shape.Faces, key=lambda f: f.Area)
+        alignments.append(abs(face_normal(face).dot(outward)))
+    require(min(alignments) > .999 and outward.y < 0 and outward.z > .05,
+            'Mask, glass and display board do not face the same inclined opening')
+    return dict(section_z_mm=[round(z, 4) for z in levels], foremost_y_mm=[round(y, 4) for y in ys],
+                side_rake_deg=round(angle, 3), glass_and_mask_follow_display_normal=True,
+                base_socket_upright=True,
+                status='ESTIMATE: side-image comparison, not a production angle')
 
 
 def verify(root):
@@ -73,6 +127,7 @@ def verify(root):
                   freecad_version='.'.join(App.Version()[:3]), physical_features=len(leaves),
                   document_objects=len(doc.Objects), parameter_aliases=len(dims),
                   exploded_links=len(doc.Exploded.Group), valid_reopened_shapes=True)
+    report['installed_fascia'] = fascia_profile(doc)
     print('=== Native file reopened; assemblies, manifest, parameters and B-reps checked', flush=True)
     wires = {o.Contact: o for o in leaves if 'Contact' in o.PropertiesList and o.TypeId == 'Part::Loft'}
     expected = {'B+': 'red', 'B-': 'black', 'F+': 'blue', 'F-': 'blue', 'Clear1': 'clear', 'Clear2': 'clear',
@@ -99,7 +154,7 @@ def verify(root):
         exchange = root / f'{PREFIX}{suffix}.step'
         saved = Part.read(str(exchange))
         actual = saved.Solids
-        actual_volume = sum(abs(s.Volume) for s in actual)
+        actual_volume = sum(solid_volume(s) for s in actual)
         delta = max(abs(a-b) for a, b in zip(bbox(saved), expected_bounds))
         volume_rel = abs(actual_volume-expected_volume) / max(expected_volume, 1)
         print(f'  {len(actual)} / {expected_count} solids; Δbounds {delta:.6f} mm; Δvolume {volume_rel:.3g}', flush=True)

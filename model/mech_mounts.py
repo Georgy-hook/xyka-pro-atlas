@@ -8,6 +8,7 @@ The spring pin is shown as a mechanical pin only, never as a net assignment.
 import FreeCAD as App
 import Part
 
+from mech_profiles import cassette_frame, in_cassette
 from mech_keyfaces import HINGE_PHOTO, REAR_PHOTO, UNLOCK_PHOTO, cushion, grip_key
 from mech_shapes import (
     ALLOY, BACK_PHOTO, CASE, CY, EST, EXT, INK, MAN, MOLD, OBS, OPEN_PHOTO,
@@ -163,22 +164,34 @@ def board_carrier(c, cover):
 
 def rim_hardware(c, upper, shell):
     mounts = c.sub(c.groups['mounts'], 'MechPanelFixings', 'Лицевая кассета · пример установки крепежа')
+    rim = c.sub(upper, 'MechRimEars', 'Проушины в наклонной плоскости кассеты')
+    cassette_frame(c, rim)
+    cassette_frame(c, mounts)
+    shell = in_cassette(shell, inverse=True)
     # Four direct sightings, not a fictitious regularly spaced bolt circle.
     # No fifth screw is silently mirrored into the area occluded by the board.
     fixtures = [('TopL', -15.25, 142.9), ('TopR', 15.25, 142.9),
-                ('SideR', 18.63, 82.9), ('Foot', -1.9, 64.42)]
+                ('SideR', 18.63, 82.9), ('Foot', -1.9, 69.02)]
     for ident, x, z in fixtures:
         rr = 1.98 if ident.startswith('Top') else 1.90
-        ear = circle(rr, 3.44, x, 1.50, z, Y)
+        depth = 3.05 if ident == 'Foot' else 3.44
+        ear = circle(rr, depth, x, 1.50, z, Y)
         if ident.startswith('Top'):
             strap = Part.makeBox(rr*2, 3.44, 2.23, V(x-rr, 1.5, z))
         elif ident == 'SideR':
             strap = Part.makeBox(2.0, 3.44, 2*rr, V(x, 1.5, z-rr))
         else:
-            strap = Part.makeBox(2*rr, 3.44, 1.85, V(x-rr, 1.5, z-1.85))
+            strap = Part.makeBox(2*rr, depth, 1.85, V(x-rr, 1.5, z-1.85))
         ear = ear.fuse(strap).cut(circle(.90, 5.0, x, 1.1, z, Y)).removeSplitter()
-        ear = ear.cut(shell).removeSplitter()
-        scaled_part(c, upper, 'PanelEar'+ident, 'Проушина кассеты '+ident, ear, MOLD,
+        # The curved cheek can sever a corner outside the case. Only the
+        # mounting lug connected to the web around its bore is physical.
+        web = V(x - 1.40, 1.50 + depth / 2, z)
+        pieces = ear.cut(shell).removeSplitter().Solids
+        seated = [piece for piece in pieces if piece.isInside(web, 1e-6, False)]
+        if len(seated) != 1:
+            raise ValueError(f'{ident}: no unique rim ear at its bore')
+        ear = seated[0]
+        scaled_part(c, rim, 'PanelEar'+ident, 'Проушина кассеты '+ident, ear, MOLD,
                     PHOTO, OBS, 'Координата оценена по косому AD206911; сквозной канал сохранён.')
         if ident.startswith('Top'):
             screw = depth_turn(turned([(0, 0), (1.12, 0), (1.53, .20), (1.62, .40),

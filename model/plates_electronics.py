@@ -10,7 +10,7 @@ def landmark(items, *names, avoid=()):
     return choose(items, *names, avoid=avoid)
 
 
-def numbered_plan(s, mapping, points, margin):
+def numbered_plan(s, points, margin):
     """Send callouts to nearest side; separate their badges vertically."""
     xmin, xmax = margin
     mid = (xmin+xmax)/2
@@ -58,14 +58,14 @@ def pcb(a):
     rgb = landmark(items, 'PcRGBShroud', 'PcRGBPlugBody', 'RGBHousing', 'RGBConnector', 'RgbSocket', 'Connector', 'разъём',
                    avoid=('pin', 'contact', 'wire', 'lead', 'контакт'))
     keys = [u3, flash, buz, rgb]
-    centers = [frame[:2] @ i.center for i in keys]
+    centers = [np.asarray(projected_box([i], frame)).reshape(2, 2).mean(0) for i in keys]
     s.caption(14, 242, 'В1', 'Компоновка', 'Шелкография и площадки — тела из модели')
     box = (27, 49, 108, 172)
     m = s.geometry(view, box, cap=3, weight=.09)
     bounds = projected_box([sub], frame)
     lo, bot, hi, top = m.uvbox(bounds)
     s.dim_h(lo, hi, bot, bot-7.5, est(bounds[2]-bounds[0], 1))
-    numbered_plan(s, m, [(j+1, m.uv(*v)) for j, v in enumerate(centers)], (18, 137))
+    numbered_plan(s, [(n, m.uv(*v)) for n, v in a.plan_points(root, keys)], (18, 137))
     s.bar(18, 30, m.scale, 10)
     s.label(134, 30.5, ratio(m.scale), 8.4, color=MUTE, align='right')
     s.line([(148, 26), (148, 246)], lw=.18)
@@ -104,13 +104,13 @@ def ui(a):
     fpc = landmark(items, 'UiFPC', 'flex', 'FPC', 'шлейф', avoid=('pin', 'площадки'))
     shield = landmark(items, 'UiPerforated', 'perfor', 'перфор', 'щит', 'screen', 'mesh', 'metal')
     keys = [glass, button, fpc, shield]
-    cps = [frame[:2] @ i.center for i in keys]
-    s.caption(14, 242, 'Г1', 'Лицевая сторона', 'Нормаль к плоскости PCB  /  −Y')
+    cps = [np.asarray(projected_box([i], frame)).reshape(2, 2).mean(0) for i in keys]
+    s.caption(14, 242, 'Г1', 'Лицевая сторона', 'По нормали к дисплейной PCB, со стороны кнопок')
     m = s.geometry(p, (23, 51, 113, 166), cap=3, weight=.085)
     bounds = projected_box([sub], frame)
     lo, bot, hi, top = m.uvbox(bounds)
     s.dim_h(lo, hi, bot, bot-7.4, est(bounds[2]-bounds[0], 1))
-    numbered_plan(s, m, [(j+1, m.uv(*v)) for j, v in enumerate(cps)], (17, 140))
+    numbered_plan(s, [(n, m.uv(*v)) for n, v in a.plan_points(root, keys)], (17, 140))
     s.bar(18, 30, m.scale, 10)
     s.label(134, 30.5, ratio(m.scale), 8.4, color=MUTE, align='right')
     s.line([(150, 26), (150, 246)], lw=.18)
@@ -125,7 +125,7 @@ def ui(a):
     s.label(159, 122, 'Г3   Боковой профиль', 9.6, bold=True)
     mp = s.geometry(profile, (159, 67, 96, 38), cap=2, weight=.24)
     s.bar(159, 63, mp.scale, 10)
-    s.label(159, 46, 'Вправо +Z; к пользователю вверх (−Y).', 7.9, color=MUTE)
+    s.label(159, 46, 'Вправо — от кнопок к стеклу; вверх — от лицевой маски.', 7.9, color=MUTE)
     s.line([(265, 26), (265, 246)], lw=.18)
     s.small(274, 242, 'ВИДИМЫЕ УЗЛЫ')
     entries = [('Дисплейная панель', 'Стекло закрывает часть PCB.\nТип контроллера дисплея — UNKNOWN.'),

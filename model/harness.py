@@ -90,12 +90,16 @@ def lower_stations(c, anchor, crest, lane, depth, key):
         # the buzzer and return on the cavity side, like the pair in IMG_8916.
         edge_drop = 0.15 if key == 'F-' else 0.0
         side_clearance = 0.019 if key == 'F-' else 0.0
+        # Tuck the whole free bight towards the PCB (-w), not just its return
+        # leg: the raked cassette brings the crown up against the fixed well.
+        # Enter each return lane at the shoulder to keep the fold open.
+        bight_offset = -1.2  # mm
         return [start, station(c, u-0.010, v+0.037, 0.39),
                 station(c, u-0.011-side_clearance, v+0.117, 0.91-edge_drop),
                 station(c, u-0.012-side_clearance, 0.335, 0.94-edge_drop),
-                station(c, u, crest-0.049, 0.82-edge_drop),
-                station(c, u+0.008, crest, 0.84),
-                station(c, u+0.024, crest-0.053, 1.038),
+                station(c, u+0.005, crest-0.049, 0.82-edge_drop, bight_offset),
+                station(c, u+0.008, crest, 0.84, bight_offset),
+                station(c, lane, crest-0.053, 1.038, bight_offset),
                 station(c, lane, 0.198, depth),
                 station(c, lane, 0.092, depth), terminal]
     if key in ('GND', 'KEY+', 'S-', 'S+'):
@@ -128,12 +132,15 @@ def light_stations(c, anchor, i):
                                        ('LightBarDrop', -k), ('PanelBase', -k)])
         return Coordinate(c, 'BoardW', x), y, depth
 
+    # Ease the free fan towards the front of the open rail channel. The depth
+    # datum is unchanged; stop at the visible mouth, not down the pack wall.
+    mouth = Coordinate.combination(c, [('LightBarDepth', 1), ('MainDepth', -1)], offset=-3.6)
     return [station(c, u, v, 0, w),
             station(c, u + 0.002+(i-1.5)*0.004, v+0.042, 0.03, w),
             station(c, u + 0.025+(i-1.5)*0.014, v+0.102, 0.13, w),
-            approach(0.58, 0.055+lane, Coordinate(c, 'LoopDepth', 0.53 + i*0.018)),
-            approach(0.86, 0.115+lane, Coordinate(c, 'LoopDepth', 0.50+i*0.018)),
-            approach(1, 0.105+lane, Coordinate.combination(c, [('LightBarDepth', 1), ('MainDepth', -1)]))]
+            approach(0.58, 0.055+lane, Coordinate(c, 'LoopDepth', 0.49+i*0.018)),
+            approach(0.86, 0.115+lane, Coordinate(c, 'LoopDepth', 0.35+i*0.018)),
+            approach(1, 0.105+lane, mouth)]
 
 
 def fill_stations(path, spacing=4.0):
