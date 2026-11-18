@@ -1,0 +1,21 @@
+# Local runtime files and automatic FreeCAD backup copies
+__pycache__/
+*.py[cod]
+.DS_Store
+*.FCStd1
+*.FCBak
+*.FCStd.bak
+/xkah-output-*/
+
+# Reproducible publication. Files stay in the working folder for immediate use.
+/XKAH_PRO_A43_*.FCStd
+/XKAH_PRO_A43_*.step
+/XKAH_PRO_A43_*.pdf
+/XKAH_PRO_A43_*.png
+/XKAH_PRO_A43_*.zip
+/drawings/
+/MODEL_MANIFEST.csv
+/DIMENSIONS.csv
+/WIRE_REGISTER.csv
+/FIT_CHECK.csv
+/VERIFICATION.json

@@ -1,0 +1,40 @@
+{
+  "image": "photos/original/IMG_8917.jpg",
+  "image_dimensions_px": [1152, 2048],
+  "frame": "Original, unrotated, origin top left; pixel x right, pixel y down. u right, v toward LCD, w outward from PCB. Rotate photo 90 degrees CCW for upright viewing, not for this matrix.",
+  "method": "8918: metric rectification from circular contact rims, parallel side edges and horizontal central row. Nominal scale inferred from the approximately 3 x 4 mm tactile case family; terminals, switch tops and glass not used as coplanar rulers. Board far end cropped in both views. Reproject these reconstructed positions into the independent view 8917 by an overdetermined planar projectivity on its six declared fit landmarks. Check points do not enter that fit.",
+  "scale_limit": "Not a physical calibration. Absolute in-plane scale uncertainty about 12%; off-plane features have parallax, particularly the turned flex and LCD edge. Pixel residuals are not mm accuracy.",
+  "homogeneous_uv_to_xy_px": [
+    [4.63851897, 40.8322510, 149.503561],
+    [21.9346304, -6.78646922, 751.391604],
+    [-0.00997667318, 0.00329758174, 1.0]
+  ],
+  "fields": ["object_id", "u_mm", "v_mm", "original_x_px", "original_y_px"],
+  "fit": [
+    ["UiContact01", -11.65, 3.67, 218, 417],
+    ["UiContact02", -4.37, 2.10, 204, 611],
+    ["UiContact06", 12.07, 3.51, 392, 1115],
+    ["UiWitnessEye", -6.76, 14.31, 630, 454],
+    ["UiEdgePad01", 11.88, 7.15, 548, 1062],
+    ["UiEdgePad04", 11.69, 14.82, 868, 974]
+  ],
+  "check": [
+    ["UiContact03", -1.04, 2.06, 225, 705],
+    ["UiContact04", 2.36, 2.05, 249, 805],
+    ["UiContact05", 5.38, 2.07, 271, 898],
+    ["UiHoleL", -7.9, 1.25, 153, 528],
+    ["UiHoleR", 8.25, 1.25, 262, 1006],
+    ["UiEdgePad02", 11.77, 9.67, 656, 1031],
+    ["UiEdgePad03", 11.76, 12.15, 765, 1003]
+  ],
+  "nominal_residual_px": {"fit_rms": 1.38, "check_rms": 3.50, "check_max": 6.39},
+  "secondary_image": {
+    "image": "photos/original/IMG_8918.jpg",
+    "frame": "Original 1152 x 2048, same pixel convention; approximate map on soldermask only.",
+    "homogeneous_uv_to_xy_px": [
+      [-0.971613595, 53.6459679, 112.252425],
+      [48.6113580, 18.4050696, 830.578272],
+      [0.0034731071, 0.0220771206, 1.0]
+    ]
+  }
+}

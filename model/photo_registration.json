@@ -1,0 +1,63 @@
+{
+  "observations": "Unrotated native JPEG pixels, x right / y down. Marked independently by eye at 1:1 or 2:1. Original mask regions are coarse, not traced board contours. F: fit on PCB plane; K: planar holdout; H: raised face, parallax diagnostic only. No world-to-image matrix from the builders is used. Input JPEGs are required only to regenerate the self-contained PNG.",
+  "views": [
+    {
+      "plate": "01", "title": "Основная плата   /   GYS005-S-088-A4.3",
+      "photo": "IMG_8915.jpg", "sha256": "c823fa1261fbb5837eb58018939d884a534b910090d46ca20222fb7fa7165232",
+      "axis_directions": [[0, -1], [-1, 0]], "omit_suffixes": ["_Legend"],
+      "group": "MainPCB", "substrate": "PcMaskFace", "crop": [0, 372, 1152, 1312],
+      "limit": "Левые контакты обрезаны кадром; зуммер и U3 видны частично. Мелкая маркировка корпусов не наложена. IMG_8915 входил в реконструкцию: K проверяет перенос, но не является независимым обмером платы.",
+      "points": [
+        {"id":"F1","role":"fit","name":"VCC","ref":{"object":"PcEdgeVCC"},"pixel":[16,604],"label_offset":[13,-33]},
+        {"id":"F2","role":"fit","name":"R у торца","ref":{"object":"PcEdgeR"},"pixel":[35,1120],"label_offset":[20,15]},
+        {"id":"F3","role":"fit","name":"круг у C56","ref":{"object":"PcDiscC56"},"pixel":[909,623],"label_offset":[26,-29]},
+        {"id":"F4","role":"fit","name":"круг у R45","ref":{"object":"PcDiscR45"},"pixel":[231,1183],"label_offset":[-45,19]},
+        {"id":"F5","role":"fit","name":"VDD","ref":{"object":"PcAuxVDD"},"pixel":[652,934],"label_offset":[-26,-35]},
+        {"id":"F6","role":"fit","name":"GND тест-группы","ref":{"object":"PcAuxGND"},"pixel":[803,931],"label_offset":[10,-34]},
+        {"id":"F7","role":"fit","name":"TX","ref":{"object":"PcTX"},"pixel":[989,991],"label_offset":[12,-37]},
+        {"id":"K1","role":"check","name":"Торцевой контакт B1","ref":{"object":"PcEdgeB1"},"pixel":[19,731],"label_offset":[18,-30]},
+        {"id":"K2","role":"check","name":"Торцевой контакт G","ref":{"object":"PcEdgeG"},"pixel":[29,999],"label_offset":[17,-30]},
+        {"id":"K3","role":"check","name":"Тест-группа: SDA","ref":{"object":"PcAuxSDA"},"pixel":[753,931],"label_offset":[-14,-34]},
+        {"id":"K4","role":"check","name":"Соседняя площадка RX","ref":{"object":"PcRX"},"pixel":[958,991],"label_offset":[-35,-30]},
+        {"id":"H1","role":"height","name":"U7 · центр корпуса сверху","ref":{"object":"PcU7_Body"},"pixel":[646,593],"label_offset":[12,-32]},
+        {"id":"H2","role":"height","name":"D26 / SS14 · верх","ref":{"object":"PcD26_Body"},"pixel":[670,457],"label_offset":[10,17]},
+        {"id":"H3","role":"height","name":"Flash · центр корпуса сверху","ref":{"object":"PcFlash_Body"},"pixel":[790,1100],"label_offset":[13,-28]}
+      ],
+      "occlusion": [
+        {"type":"finger","polygon":[[0,372],[421,372],[399,402],[370,415],[332,437],[293,461],[253,481],[240,499],[189,507],[153,514],[99,523],[0,528]]},
+        {"type":"wire","polygon":[[1152,966],[1127,986],[1080,1016],[1039,1041],[1013,1069],[986,1100],[950,1130],[917,1164],[874,1190],[832,1221],[778,1257],[707,1312],[831,1312],[885,1267],[945,1221],[983,1176],[1058,1144],[1110,1136],[1152,1126]]},
+        {"type":"wire","polygon":[[1152,1164],[1105,1183],[1051,1193],[1000,1210],[940,1240],[928,1257],[989,1234],[1049,1218],[1105,1206],[1152,1198]]},
+        {"type":"wire","polygon":[[902,1235],[854,1241],[788,1260],[716,1279],[634,1302],[603,1312],[693,1312],[731,1296],[806,1279],[864,1260],[902,1253]]},
+        {"type":"wire","polygon":[[514,1058],[487,1069],[460,1091],[432,1120],[413,1151],[395,1195],[378,1255],[368,1312],[393,1312],[414,1246],[429,1204],[447,1165],[468,1136],[492,1111],[519,1096]]},
+        {"type":"wire","polygon":[[515,1100],[489,1120],[458,1150],[434,1195],[422,1239],[418,1277],[426,1312],[463,1312],[457,1269],[466,1222],[480,1188],[495,1167],[514,1157]]}
+      ]
+    },
+    {
+      "plate":"02", "title":"Экранная плата   /   20260305A",
+      "photo":"IMG_8917.jpg", "sha256":"23656ea87ff07ab58ededbc0a2b17774e7b714019012b30a8215ce5e0154436d",
+      "axis_directions": [[0, 1], [1, 0]],
+      "group":"DisplayPCB", "substrate":"UiSubstrate", "glass":["UiGlass"], "crop":[0,200,1152,1248],
+      "limit":"Контур и координаты сняты главным образом с IMG_8918, перенос проверен на IMG_8917. Стекло скрывает часть PCB, дальний торец экрана вне кадра. Верх кнопок и изгиб FPC смещены параллаксом.",
+      "points":[
+        {"id":"F1","role":"fit","name":"контакт 01","ref":{"object":"UiContact01"},"pixel":[218,418],"label_offset":[-44,-32]},
+        {"id":"F2","role":"fit","name":"контакт 03","ref":{"object":"UiContact03"},"pixel":[225,706],"label_offset":[-46,-18]},
+        {"id":"F3","role":"fit","name":"правое отверстие","ref":{"object":"UiSubstrate","hole_near_mm":[8.25,1.25,3]},"pixel":[262,1007],"label_offset":[-45,4]},
+        {"id":"F4","role":"fit","name":"кольцо у стекла","ref":{"object":"UiWitnessEye"},"pixel":[630,454],"label_offset":[-43,-24]},
+        {"id":"F5","role":"fit","name":"контакт 06","ref":{"object":"UiContact06"},"pixel":[392,1116],"label_offset":[-27,25]},
+        {"id":"F6","role":"fit","name":"краевая 01","ref":{"object":"UiEdgePad01"},"pixel":[549,1061],"label_offset":[-4,20]},
+        {"id":"F7","role":"fit","name":"краевая 04","ref":{"object":"UiEdgePad04"},"pixel":[870,974],"label_offset":[5,-34]},
+        {"id":"K1","role":"check","name":"Левое открытое отверстие","ref":{"object":"UiSubstrate","hole_near_mm":[-7.9,1.25,3]},"pixel":[153,528],"label_offset":[-37,-33]},
+        {"id":"K2","role":"check","name":"Большой круглый контакт 02","ref":{"object":"UiContact02"},"pixel":[204,611],"label_offset":[-49,-19]},
+        {"id":"K3","role":"check","name":"Большой круглый контакт 04","ref":{"object":"UiContact04"},"pixel":[248,805],"label_offset":[-46,-18]},
+        {"id":"K4","role":"check","name":"Краевая площадка 02","ref":{"object":"UiEdgePad02"},"pixel":[659,1031],"label_offset":[13,11]},
+        {"id":"H1","role":"height","name":"Левая кнопка · верх","ref":{"object":"UiPlungerL"},"pixel":[333,425],"label_offset":[13,-33]},
+        {"id":"H2","role":"height","name":"Средняя кнопка · верх","ref":{"object":"UiPlungerC"},"pixel":[406,670],"label_offset":[13,-33]},
+        {"id":"H3","role":"height","name":"Правая кнопка · верх","ref":{"object":"UiPlungerR"},"pixel":[490,938],"label_offset":[13,-33]}
+      ],
+      "occlusion":[
+        {"type":"finger","polygon":[[0,250],[49,266],[90,292],[135,319],[166,348],[182,381],[184,406],[174,433],[158,457],[137,482],[112,513],[82,540],[38,566],[0,577]]},
+        {"type":"glass","polygon":[[676,270],[704,239],[752,208],[770,200],[1152,200],[1152,977],[1107,976],[1052,971],[1005,951],[964,932],[924,895],[889,860],[864,815],[847,777],[825,741],[793,659],[758,570],[723,483],[689,390],[673,332]]}
+      ]
+    }
+  ]
+}
